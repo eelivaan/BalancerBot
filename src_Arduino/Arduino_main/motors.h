@@ -1,5 +1,7 @@
 #define IA1_PIN 9
 #define IA2_PIN 10
+#define IB1_PIN 5
+#define IB2_PIN 6
 
 void forward()
 {
