@@ -1,0 +1,9 @@
+{
+    "Kp": 0.1,
+    "Ki": 0.0,
+    "Kd": 0.0,
+    "target": 0.0,
+    "loop_interval": 100,
+    "limit": 11.0,
+    "channel": "y"
+}

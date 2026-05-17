@@ -87,10 +87,10 @@ class BLESerial:
             if value_handle == self.rx_handle:
                 incoming = self.ble.gatts_read(self.rx_handle)
                 self.msg_buffer.extend(incoming)
-                if b"\n" in self.msg_buffer:
+                if b'\0' in self.msg_buffer:
+                    (msg, self.msg_buffer) = self.msg_buffer.split(b'\0', 1)  # Split at null terminator
                     if self.msg_callback:
-                        self.msg_callback(self.msg_buffer.decode("utf-8", "replace"))
-                    self.msg_buffer = bytearray()  # Clear buffer after processing
+                        self.msg_callback(msg.decode("utf-8", "replace"))
                 # Echo back received bytes to emulate a serial terminal.
                 self.send(incoming)
 

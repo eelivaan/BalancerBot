@@ -1,10 +1,10 @@
 import asyncio
 import tkinter as tk
+from tkinter import ttk
 import threading
 from bleak import BleakScanner, BleakClient
 from queue import Queue
 import json
-import time
 
 DEVICE_NAME = "PicoBLE"
 
@@ -45,12 +45,12 @@ async def main():
             #    break
             #await client.write_gatt_char(UART_RX_UUID, (line + "\n").encode("utf-8"))
             if not sendQueue.empty():
-                msg = sendQueue.get_nowait() + "\n"
+                msg = sendQueue.get_nowait() + '\0'
                 # 20 char limit per BLE packet, so split if needed
                 for i in range(0, len(msg), 20):
                     chunk = msg[i:i+20]
                     await client.write_gatt_char(UART_RX_UUID, chunk.encode("utf-8"))
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
 
         await client.stop_notify(UART_TX_UUID)
         print("Disconnected.")
@@ -63,28 +63,26 @@ class GUIApp(tk.Tk):
         self.geometry("600x400")
 
         font = ("Consolas", 11)
+        style = ttk.Style()
+        style.theme_use('clam')
 
-        self.accel_label = tk.Label(self, text="N/A", font=font, justify="left", anchor="w", width=70)
+        self.accel_label = ttk.Label(self, text="N/A", font=font, justify="left", anchor="w", width=70)
         self.accel_label.grid(pady=20, padx=10, row=0, column=0, columnspan=10)
 
         for i, t in enumerate(["Kp", "Ki", "Kd", "Target"]):
-            tk.Label(self, text=f"{t}:", font=font).grid(pady=5, padx=5, row=i+1, column=0)
+            ttk.Label(self, text=f"{t}:", font=font).grid(pady=5, padx=5, row=i+1, column=0)
             setattr(self, t, tk.DoubleVar(value=0.0))
-            setattr(self, f"{t}Edit", tk.Spinbox(self, from_=0.0, to=10.0, increment=0.1, textvariable=getattr(self, t), width=6))
+            setattr(self, f"{t}Edit", ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.1, textvariable=getattr(self, t), width=6))
             getattr(self, f"{t}Edit").grid(pady=5, padx=5, row=i+1, column=1)
             getattr(self, f"{t}Edit").configure(command=self.send_pid)  # Call send_pid on value change
             getattr(self, f"{t}Edit").bind("<Return>", lambda event: self.send_pid())  # Call send_pid on enter key
-        self.Kp.set(1.0)
+        self.Kp.set(0.1)
 
-        self.LoopIntervalLabel = tk.Label(self, text="Loop Interval (ms):", font=font)
-        self.LoopIntervalLabel.grid(pady=5, padx=5, row=5, column=0)
-        self.LoopIntervalEdit = tk.Spinbox(self, from_=10, to=500, increment=10, textvariable=tk.IntVar(value=100), width=6)
-        self.LoopIntervalEdit.grid(pady=5, padx=5, row=5, column=1)
-        self.LoopIntervalEdit.configure(command=self.send_pid)
-        self.LoopIntervalEdit.bind("<Return>", lambda event: self.send_pid())
+        self.download_btn = ttk.Button(self, text="Download config.json", command=self.download_config)
+        self.download_btn.grid(pady=10, padx=5, row=5, column=0)
 
         self.tick()
-        self.send_pid()  # Send initial PID values to Pico
+        #self.send_pid()  # Send initial PID values to Pico
 
     def tick(self):
         if not msgQueue.empty():
@@ -101,11 +99,17 @@ class GUIApp(tk.Tk):
 
     def send_pid(self):
         try:
-            msg = json.dumps({"Kp": self.Kp.get(), "Ki": self.Ki.get(), "Kd": self.Kd.get(), 
-                              "tgt": self.Target.get(), "intv": int(self.LoopIntervalEdit.get())})
+            msg = json.dumps({"type": "pid", 
+                              "Kp": self.Kp.get(), "Ki": self.Ki.get(), "Kd": self.Kd.get(), "tgt": self.Target.get()})
             sendQueue.put(msg)
         except ValueError:
             pass  # Ignore invalid input
+
+    def download_config(self):
+        with open("config.json", "r") as f:
+            content = f.read()
+            msg = json.dumps({"type": "config", "content": content})
+            sendQueue.put(msg)
         
         
 

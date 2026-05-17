@@ -20,33 +20,47 @@ mpu = mpu6050(0x68, i2c)
 
 pid = PIDController()
 
-loop_interval = 100  # ms
+config = {}
+def load_config():
+    global config
+    with open("config.json", "r") as f:
+        config = json.load(f)
+        pid.Kp = config['Kp']
+        pid.Ki = config['Ki']
+        pid.Kd = config['Kd']
+        pid.target_value = config['target']
+load_config()
 
 def ble_msg_callback(msg):
-    global loop_interval
-    print("Received BLE message: ", msg)
+    print("Received BLE message")
     try:
         params = json.loads(msg)
-        pid.Kp = params["Kp"]
-        pid.Ki = params["Ki"]
-        pid.Kd = params["Kd"]
-        pid.target_value = params["tgt"]
-        loop_interval = params["intv"]
+        # update PID params
+        if params.get('type') == 'pid':
+            pid.Kp = params['Kp']
+            pid.Ki = params['Ki']
+            pid.Kd = params['Kd']
+            pid.target_value = params['tgt']
+        # download config file
+        elif params.get('type') == 'config':
+            with open("config.json", "w") as f:
+                f.write(params['content'])
+            load_config()  # Reload config to apply changes
     except (json.JSONDecodeError, KeyError) as e:
-        pass
+        print("Unhandled BLE message: ", msg)
 
 ble = BLESerial(ble_msg_callback)
 
 while True:
     try:
         accel = mpu.get_accel_data()
-        signal = 0.0 if abs(accel['z']) > 7.0 else pid.calcPID(accel['z'])
+        signal = 0.0 if abs(accel[config['channel']]) > config['limit'] else pid.calcPID(accel[config['channel']])
         led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
         data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp()}
         ble.send(json.dumps(data))
 
-        sleep_ms(loop_interval)
+        sleep_ms(config['loop_interval'])
 
     except KeyboardInterrupt:
         break
