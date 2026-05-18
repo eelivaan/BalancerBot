@@ -1,5 +1,5 @@
 from machine import Pin, PWM, Timer, I2C
-from utime import sleep_ms
+from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff
 from mpu6050 import mpu6050
 from BLESerial import BLESerial
 from control import PIDController
@@ -51,16 +51,45 @@ def ble_msg_callback(msg):
 
 ble = BLESerial(ble_msg_callback)
 
+history_x = []
+filtered_x = 0.0
+
+prev_status_time = ticks_ms()
+dt = 0
+
 while True:
     try:
+        a = ticks_us()
+
+        # measure and filter acceleration
         accel = mpu.get_accel_data()
-        signal = 0.0 if abs(accel[config['channel']]) > config['limit'] else pid.calcPID(accel[config['channel']])
+        x = accel[config['channel']] # type: ignore
+
+        if config['filter'] > 0:
+            history_x.append(x)
+            #filtered_x += x / config['filter']
+            if len(history_x) > config['filter']:
+                history_x.pop(0)
+                #filtered_x -= history_x.pop(0) / config['filter']
+            filtered_x = sum(history_x) / len(history_x)
+
+            signal = 0.0 if abs(filtered_x) > config['limit'] else pid.calcPID(filtered_x)
+        else:
+            signal = 0.0 if abs(x) > config['limit'] else pid.calcPID(x)
+
+        # motor control
         led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
-        data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp()}
-        ble.send(json.dumps(data))
+        # send status info to laptop
+        if ble.is_connected() and ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
+            prev_status_time = ticks_ms()
+            data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp(), 's': filtered_x, 'dt': dt}
+            ble.send(json.dumps(data))
 
-        sleep_ms(config['loop_interval'])
+        b = ticks_us()
+        dt = ticks_diff(b, a)
+
+        sleep_ms(max(1, config['loop_interval'] - dt // 1000))
 
     except KeyboardInterrupt:
         break

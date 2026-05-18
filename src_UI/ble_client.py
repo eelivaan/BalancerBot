@@ -89,7 +89,9 @@ class GUIApp(tk.Tk):
             data = msgQueue.get_nowait()
             text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
             text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
-            text += f"Temp: {data['t']:.2f}°C"
+            text += f"Temp: {data['t']:.2f}°C\n"
+            text += f"Filtered Signal: {data['s']:.4f}\n"
+            text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms"
             self.accel_label.config(text=text)
         self.after(100, self.tick)
 

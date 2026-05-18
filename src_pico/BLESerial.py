@@ -102,6 +102,10 @@ class BLESerial:
             print("Scan ready")
 
 
+    def is_connected(self):
+        return len(self.connections) > 0
+
+
 if __name__ == "__main__":
     # test connectivity
     ble = BLESerial()
