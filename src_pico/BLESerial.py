@@ -1,7 +1,5 @@
 import bluetooth
 import struct
-from machine import Pin
-from utime import sleep_ms
 
 class BLESerial:
     _IRQ_CENTRAL_CONNECT = 1
@@ -28,33 +26,40 @@ class BLESerial:
         (_UART_TX, _UART_RX),
     )
 
-    def __init__(self, msg_callback=None) -> None:
+    def __init__(self, msg_callback=None, name="PicoBLE") -> None:
         self.ble = bluetooth.BLE()
         self.connections = set()
         self.tx_handle = None
         self.rx_handle = None
         self.msg_callback = msg_callback
         self.msg_buffer = bytearray()
+        self.name = name
 
         self.ble.irq(self.ble_callback)
         self.ble.active(True)
 
         if 1:
             ((self.tx_handle, self.rx_handle),) = self.ble.gatts_register_services((self._UART_SERVICE,))
-            self.ble.gap_advertise(50_000, adv_data=self.advertising_payload())
-            print("BLE UART advertising as <PicoBLE>...")
+            self.ble.gap_advertise(50_000, adv_data=self.advertising_payload()) # type: ignore
+            print(f"BLE UART advertising as <{self.name}>...")
         else:
-            print("Scanning...")
+            print("Scanning for devices...")
             self.ble.gap_scan(5000)
+
+    def __del__(self):
+        self.deactivate()
 
     def deactivate(self):
         self.ble.active(False)
+        print("BLE deactivated")
 
+    def is_connected(self):
+        return len(self.connections) > 0
 
-    def advertising_payload(self, name="PicoBLE"):
+    def advertising_payload(self):
         payload = bytearray()
         payload += b"\x02\x01\x06"  # General discoverable + BR/EDR not supported.
-        name_bytes = name.encode("utf-8")
+        name_bytes = self.name.encode("utf-8")
         payload += struct.pack("BB", len(name_bytes) + 1, 0x09) + name_bytes
         # 128-bit UUID omitted to stay within the 31-byte BLE advertising limit.
         return payload
@@ -64,49 +69,48 @@ class BLESerial:
         if isinstance(data, str):
             data = data.encode("utf-8")
         for conn_handle in self.connections:
-            self.ble.gatts_notify(conn_handle, self.tx_handle, data)
+            self.ble.gatts_notify(conn_handle, self.tx_handle, data) # type: ignore
 
 
     def ble_callback(self, event, data):
         if event == BLESerial._IRQ_CENTRAL_CONNECT:
             conn_handle, _, _ = data
             self.connections.add(conn_handle)
-            print("Central connected:", conn_handle)
-            self.send("Hello")
+            print(f"Central <{conn_handle}> connected")
 
         elif event == BLESerial._IRQ_CENTRAL_DISCONNECT:
             conn_handle, _, _ = data
             if conn_handle in self.connections:
                 self.connections.remove(conn_handle)
-            print("Central disconnected:", conn_handle)
+            print(f"Central <{conn_handle}> disconnected")
             if self.ble.active():
-                self.ble.gap_advertise(50_000, adv_data=self.advertising_payload())
+                self.ble.gap_advertise(50_000, adv_data=self.advertising_payload()) # type: ignore
 
         elif event == BLESerial._IRQ_GATTS_WRITE:
             conn_handle, value_handle = data
             if value_handle == self.rx_handle:
-                incoming = self.ble.gatts_read(self.rx_handle)
+                incoming = self.ble.gatts_read(self.rx_handle) # type: ignore
                 self.msg_buffer.extend(incoming)
                 if b'\0' in self.msg_buffer:
                     (msg, self.msg_buffer) = self.msg_buffer.split(b'\0', 1)  # Split at null terminator
                     if self.msg_callback:
                         self.msg_callback(msg.decode("utf-8", "replace"))
+                        self.send("ok")
                 # Echo back received bytes to emulate a serial terminal.
-                self.send(incoming)
+                #self.send(incoming)
 
         elif event == BLESerial._IRQ_SCAN_RESULT:
             (addr_type, addr, adv_type, rssi, adv_data) = data
-            print(addr_type, bytes(addr), adv_type, rssi, bytes(adv_data))
+            print("Scan result:", addr_type, bytes(addr), adv_type, rssi, bytes(adv_data))
 
         elif event == BLESerial._IRQ_SCAN_DONE:
-            print("Scan ready")
+            print("Scan done")
 
-
-    def is_connected(self):
-        return len(self.connections) > 0
 
 
 if __name__ == "__main__":
+    from machine import Pin
+    from utime import sleep_ms
     # test connectivity
     ble = BLESerial()
     ledpin = Pin("LED", Pin.OUT)

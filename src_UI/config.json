@@ -6,6 +6,6 @@
     "limit": 7.0,
     "channel": "y",
     "filter": 10,
-    "loop_interval": 30,
+    "loop_interval": 20,
     "status_send_period": 100
 }
