@@ -3,7 +3,7 @@ from utime import sleep_us, ticks_ms, ticks_us, ticks_diff
 from mpu6050 import mpu6050
 from BLESerial import BLESerial
 from control import PIDController
-import json
+import json, math
 
 led_builtin = Pin("LED", Pin.OUT)
 led_external = Pin("GP22", Pin.OUT)
@@ -17,6 +17,10 @@ print("I2C Scan result: ", end='')
 for addr in i2c.scan():
     print(hex(addr))
 mpu = mpu6050(0x68, i2c)
+
+servo1_PWM = PWM(Pin("GP27"), freq=50)
+servo2_PWM = PWM(Pin("GP26"), freq=50)
+motors_enabled = False
 
 pid = PIDController()
 
@@ -32,6 +36,7 @@ def load_config():
 load_config()
 
 def ble_msg_callback(msg):
+    global motors_enabled
     print("Received BLE message")
     try:
         params = json.loads(msg)
@@ -41,6 +46,8 @@ def ble_msg_callback(msg):
             pid.Ki = params['Ki']
             pid.Kd = params['Kd']
             pid.target_value = params['tgt']
+            pid.err_integral = 0.0
+            motors_enabled = params['en']
         # download config file
         elif params.get('type') == 'config':
             with open("config.json", "w") as f:
@@ -51,8 +58,8 @@ def ble_msg_callback(msg):
 
 ble = BLESerial(ble_msg_callback)
 
-history_x = []
-filtered_x = 0.0
+value_history = []
+filtered_angle = 0.0
 
 prev_status_time = ticks_ms()
 dt = 0
@@ -63,45 +70,59 @@ while True:
 
         # measure and filter acceleration
         accel = mpu.get_accel_data()
-        x = accel[config['channel']] # type: ignore
+        a = accel[config['horiz_axis']] # type: ignore
+        b = accel[config['vert_axis']] # type: ignore
+        pitch_angle = math.degrees(math.atan(a / b))
 
         if config['filter'] > 0:
-            history_x.append(x)
+            value_history.append(pitch_angle)
             #filtered_x += x / config['filter']
-            if len(history_x) > config['filter']:
-                history_x.pop(0)
+            if len(value_history) > config['filter']:
+                value_history.pop(0)
                 #filtered_x -= history_x.pop(0) / config['filter']
-            filtered_x = sum(history_x) / len(history_x)
-
-            signal = 0.0 if abs(filtered_x) > config['limit'] else pid.calcPID(filtered_x)
+            filtered_angle = sum(value_history) / len(value_history)
         else:
-            signal = 0.0 if abs(x) > config['limit'] else pid.calcPID(x)
+            filtered_angle = pitch_angle
+
+        if abs(filtered_angle) > config['limit']:
+            signal = 0.0
+        else:
+            signal = pid.calcPID(filtered_angle, config['loop_interval'] / 1000.0)
+            signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0)
 
         # motor control
+        if motors_enabled:
+            servo1_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
+            servo2_PWM.duty_ns(int((1.5 - signal * 1.0) * 1000000))
+        else:
+            servo1_PWM.duty_ns(0)
+            servo2_PWM.duty_ns(0)
         led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
         # send status info to laptop
         if ble.is_connected() and ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
             prev_status_time = ticks_ms()
-            data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp(), 's': filtered_x, 'dt': dt}
+            data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp(), 's': filtered_angle, 'dt': dt}
             ble.send(json.dumps(data))
 
         t2 = ticks_us()
         dt = ticks_diff(t2, t1)
 
-        sleep_us(max(10, config['loop_interval']*1000 - dt))
+        sleep_us(max(10, config['loop_interval'] * 1000 - dt))
 
-    except KeyboardInterrupt:
-        break
-
-    except Exception as e:
+    except (Exception, KeyboardInterrupt) as e:
         print("Error in main loop:", e)
+        #ble.send(str(e))
         break
 #end while
 
 blink_timer.deinit()
 led_builtin.off()
+
+servo1_PWM.duty_ns(0)
+servo2_PWM.duty_ns(0)
 led_external_PWM.duty_u16(0)
 #led_external_PWM.deinit()
+
 ble.deactivate()
 print("Finished.")
