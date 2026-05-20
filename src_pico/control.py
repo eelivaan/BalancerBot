@@ -14,5 +14,5 @@ class PIDController:
         I = self.Ki * self.err_integral
         D = self.Kd * (err - self.prev_error) / delta_time
         self.prev_error = err
-        self.err_integral += err
+        self.err_integral += err * delta_time
         return P + I + D

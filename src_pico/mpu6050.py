@@ -67,6 +67,14 @@ class mpu6050:
     GYRO_CONFIG = 0x1B
     MPU_CONFIG = 0x1A
 
+    SMPLRT_DIV = 0x19
+
+    # when digital low-pass filter is enabled
+    ODR_1000Hz = 0x00
+    ODR_200Hz = 0x04
+    ODR_100Hz = 0x09
+    ODR_50Hz = 0x19
+
     def __init__(self, address, i2c=None, bus=0, scl_pin=1, sda_pin=0, freq=400000):
         self.address = address
         if i2c is None:
@@ -80,13 +88,17 @@ class mpu6050:
             self.i2c = i2c
         # Wake up the MPU-6050 since it starts in sleep mode
         self.write_byte_data(self.PWR_MGMT_1, 0x00)
+        # configure filtering and sample rate
+        self.set_filter_range(self.FILTER_BW_98) # 98 Hz low-pass filter
+        self.set_sample_rate(self.ODR_100Hz)
+
 
     def read_byte_data(self, register):
-        data = self.i2c.readfrom_mem(self.address, register, 1)
+        data = self.i2c.readfrom_mem(self.address, register, 1) # type: ignore
         return data[0]
 
     def write_byte_data(self, register, value):
-        self.i2c.writeto_mem(self.address, register, bytes([value & 0xFF]))
+        self.i2c.writeto_mem(self.address, register, bytes([value & 0xFF])) # type: ignore
 
     # I2C communication methods
 
@@ -213,6 +225,10 @@ class mpu6050:
         # Keep the current EXT_SYNC_SET configuration in bits 3, 4, 5 in the MPU_CONFIG register
         EXT_SYNC_SET = self.read_byte_data(self.MPU_CONFIG) & 0b00111000
         self.write_byte_data(self.MPU_CONFIG, EXT_SYNC_SET | filter_range)
+
+    def set_sample_rate(self, rate):
+        """Sets the sample rate of the MPU6050. Sample Rate = Gyro Output Rate / (1 + SMPLRT_DIV) """
+        self.write_byte_data(self.SMPLRT_DIV, rate)
 
 
     def read_gyro_range(self, raw = False):

@@ -84,11 +84,18 @@ class GUIApp(tk.Tk):
         for i, t in enumerate(["Kp", "Ki", "Kd", "Target"]):
             ttk.Label(self, text=f"{t}:", font=font).grid(pady=5, padx=5, row=2+i, column=0)
             setattr(self, t, tk.DoubleVar(value=0.0))
-            setattr(self, f"{t}Edit", ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.1, textvariable=getattr(self, t), width=6))
+            setattr(self, f"{t}Edit", ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.001, textvariable=getattr(self, t), width=6))
             getattr(self, f"{t}Edit").grid(pady=5, padx=5, row=2+i, column=1)
             getattr(self, f"{t}Edit").configure(command=self.send_pid)  # Call send_pid on value change
             getattr(self, f"{t}Edit").bind("<Return>", lambda event: self.send_pid())  # Call send_pid on enter key
-        self.Kp.set(0.3)
+
+        # load initial PID values from config.json
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            self.Kp.set(config.get("Kp", 0.030))
+            self.Ki.set(config.get("Ki", 0.125))
+            self.Kd.set(config.get("Kd", 0.0))
+            self.Target.set(config.get("target", 0.0))
 
         self.download_btn = ttk.Button(self, text="Download config.json", command=self.download_config)
         self.download_btn.grid(pady=10, padx=5, row=6, column=0)
@@ -118,13 +125,22 @@ class GUIApp(tk.Tk):
         else:
             self.accel_label.config(text="N/A")
 
-        self.after(100, self.tick)
+        self.after(50, self.tick)
 
 
     def destroy(self):
         super().destroy()
         stop_flag.set()
-
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            config['Kp'] = self.Kp.get()
+            config['Ki'] = self.Ki.get()
+            config['Kd'] = self.Kd.get()
+            config['target'] = self.Target.get()
+            with open("config.json", "w") as f:
+                json.dump(config, f, separators=(',\n', ': ')) # type: ignore
+                print("config.json updated")
+    
 
     def send_pid(self):
         try:
