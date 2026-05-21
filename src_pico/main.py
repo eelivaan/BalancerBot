@@ -60,9 +60,12 @@ ble = BLESerial(ble_msg_callback)
 
 value_history = []
 filtered_angle = 0.0
+heading = 0.0
 
 prev_status_time = ticks_ms()
 dt = 0
+
+signal_change_counter = 0
 
 while True:
     try:
@@ -90,6 +93,15 @@ while True:
             signal = pid.calcPID(filtered_angle, config['loop_interval'] / 1000.0)
             signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0)
 
+        # track signal saturation
+        if motors_enabled and abs(signal) > 0.9:
+            signal_change_counter += config['loop_interval'] # ms
+            if signal_change_counter > 2000:
+                motors_enabled = False
+                signal_change_counter = 0
+        else:
+            signal_change_counter = 0
+
         # motor control
         if motors_enabled:
             servo1_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
@@ -99,11 +111,16 @@ while True:
             servo2_PWM.duty_ns(0)
         led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
-        # send status info to laptop
-        if ble.is_connected() and ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
-            prev_status_time = ticks_ms()
-            data = {'a': accel, 'g': mpu.get_gyro_data(), 't': mpu.get_temp(), 's': filtered_angle, 'dt': dt}
-            ble.send(json.dumps(data))
+        # measure and track orientation
+        angular_accel = mpu.get_gyro_data()
+        heading += 0.5 * math.degrees(angular_accel[config['vert_axis']] + 0.5) * (config['loop_interval'] / 1000.0)**2
+
+        # send status info to laptop periodically
+        if ble.is_connected() and config['status_send_period'] > 0:
+            if ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
+                prev_status_time = ticks_ms()
+                data = {'a': accel, 'g': angular_accel, 't': mpu.get_temp(), 's': filtered_angle, 'h': heading, 'dt': dt}
+                ble.send(json.dumps(data))
 
         t2 = ticks_us()
         dt = ticks_diff(t2, t1)

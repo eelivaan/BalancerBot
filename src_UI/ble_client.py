@@ -35,7 +35,13 @@ def on_notify(sender, data: bytearray):
 async def main():
     while not stop_flag.is_set():
         print(f"Scanning for '{DEVICE_NAME}'...")
-        device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=10.0)
+        try:
+            device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=10.0)
+        except Exception as e:
+            print(f"Error during BLE scan: {e}")
+            await asyncio.sleep(5)
+            continue
+
         if device is None:
             print("Device not found. Make sure main.py is running on the Pico.")
         else:
@@ -115,7 +121,8 @@ class GUIApp(tk.Tk):
                 text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
                 text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
                 text += f"Temp: {data['t']:.2f}°C\n"
-                text += f"Filtered Angle: {data['s']:.4f}\n"
+                text += f"Filtered Pitch: {data['s']:.3f}°\n"
+                text += f"Heading: {data['h']:.1f}°\n"
                 text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms"
                 self.accel_label.config(text=text)
             if ok_flag.is_set():
