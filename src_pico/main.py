@@ -24,6 +24,11 @@ motors_enabled = False
 
 pid = PIDController()
 
+def reset_control():
+    global motors_enabled
+    motors_enabled = True
+    pid.err_integral = 0.0
+
 config = {}
 def load_config():
     global config
@@ -35,8 +40,10 @@ def load_config():
         pid.target_value = config['target']
 load_config()
 
+quit_flag = False
+
 def ble_msg_callback(msg):
-    global motors_enabled
+    global motors_enabled, quit_flag
     print("Received BLE message")
     try:
         params = json.loads(msg)
@@ -53,6 +60,8 @@ def ble_msg_callback(msg):
             with open("config.json", "w") as f:
                 f.write(params['content'])
             load_config()  # Reload config to apply changes
+        elif params.get('type') == 'quit':
+            quit_flag = True
     except (json.JSONDecodeError, KeyError) as e:
         print("Unhandled BLE message: ", msg)
 
@@ -67,7 +76,7 @@ dt = 0
 
 signal_change_counter = 0
 
-while True:
+while not quit_flag:
     try:
         t1 = ticks_us()
 
@@ -96,9 +105,11 @@ while True:
         # track signal saturation
         if motors_enabled and abs(signal) > 0.9:
             signal_change_counter += config['loop_interval'] # ms
-            if signal_change_counter > 2000:
-                motors_enabled = False
+            if signal_change_counter > 1500:
                 signal_change_counter = 0
+                motors_enabled = False
+                # retry enabling motors after short delay
+                Timer(-1).init(mode=Timer.ONE_SHOT, period=2000, callback=lambda t: reset_control())
         else:
             signal_change_counter = 0
 
@@ -111,9 +122,10 @@ while True:
             servo2_PWM.duty_ns(0)
         led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
-        # measure and track orientation
+        # measure and track heading
         angular_accel = mpu.get_gyro_data()
-        heading += 0.5 * math.degrees(angular_accel[config['vert_axis']] + 0.5) * (config['loop_interval'] / 1000.0)**2
+        heading += (angular_accel[config['vert_axis']] + 0.5) * (config['loop_interval'] / 1000.0)
+        heading = math.fmod(heading, 360.0)
 
         # send status info to laptop periodically
         if ble.is_connected() and config['status_send_period'] > 0:
@@ -133,13 +145,15 @@ while True:
         break
 #end while
 
-blink_timer.deinit()
-led_builtin.off()
-
 servo1_PWM.duty_ns(0)
 servo2_PWM.duty_ns(0)
 led_external_PWM.duty_u16(0)
 #led_external_PWM.deinit()
 
+sleep_us(2_000_000)
+
+blink_timer.deinit()
+led_builtin.off()
+
 ble.deactivate()
-print("Finished.")
+print("Finished")

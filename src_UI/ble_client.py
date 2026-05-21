@@ -36,7 +36,7 @@ async def main():
     while not stop_flag.is_set():
         print(f"Scanning for '{DEVICE_NAME}'...")
         try:
-            device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=10.0)
+            device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=5.0)
         except Exception as e:
             print(f"Error during BLE scan: {e}")
             await asyncio.sleep(5)
@@ -73,7 +73,7 @@ class GUIApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Control Panel")
-        self.geometry("600x400")
+        self.geometry("600x450")
 
         font = ("Consolas", 11)
         style = ttk.Style()
@@ -106,8 +106,11 @@ class GUIApp(tk.Tk):
         self.download_btn = ttk.Button(self, text="Download config.json", command=self.download_config)
         self.download_btn.grid(pady=10, padx=5, row=6, column=0)
 
+        self.stop_btn = ttk.Button(self, text="Stop program", command=self.send_stop_signal)
+        self.stop_btn.grid(pady=10, padx=5, row=6, column=1)
+
         self.ok_label = ttk.Label(self, text="ok", font=("Consolas", 14), foreground="#0b0c0b", background="#a3f9a3")
-        self.ok_label.grid(pady=10, padx=5, row=6, column=1)
+        self.ok_label.grid(pady=10, padx=5, row=7, column=0)
         self.ok_label.grid_remove()  # Hide initially
 
         self.tick()
@@ -164,6 +167,11 @@ class GUIApp(tk.Tk):
             content = f.read()
             msg = json.dumps({"type": "config", "content": content})
             sendQueue.put(msg)
+
+
+    def send_stop_signal(self):
+        msg = json.dumps({"type": "quit"})
+        sendQueue.put(msg)
 #end GUIApp
 
 

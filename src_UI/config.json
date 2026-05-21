@@ -1,12 +1,10 @@
-{
-    "Kp": 0.05,
-    "Ki": 0.125,
-    "Kd": 0.0009,
-    "target": 0.0,
-    "limit": 90.0,
-    "horiz_axis": "y",
-    "vert_axis": "z",
-    "filter": 0,
-    "loop_interval": 20,
-    "status_send_period": 240
-}
+{"Kp": 0.03,
+"Ki": 0.225,
+"Kd": 0.0003,
+"target": 0.0,
+"limit": 90.0,
+"horiz_axis": "y",
+"vert_axis": "z",
+"filter": 0,
+"loop_interval": 20,
+"status_send_period": 240}
