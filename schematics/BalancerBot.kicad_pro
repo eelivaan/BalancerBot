@@ -645,7 +645,7 @@
         "uuid": "6fa14e48-cd8a-4639-b9f0-f8e9e08c6d97"
       }
     ],
-    "used_designators": "A3,U1,MPU1",
+    "used_designators": "A3,M1-2,U1,MPU1,R1,D1",
     "variants": []
   },
   "sheets": [
