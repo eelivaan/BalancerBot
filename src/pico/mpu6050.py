@@ -202,11 +202,11 @@ class mpu6050:
 
         if g is True:
             return {'x': x, 'y': y, 'z': z}
-        elif g is False:
-            x = x * self.GRAVITIY_MS2
-            y = y * self.GRAVITIY_MS2
-            z = z * self.GRAVITIY_MS2
-            return {'x': x, 'y': y, 'z': z}
+        #elif g is False:
+        x = x * self.GRAVITIY_MS2
+        y = y * self.GRAVITIY_MS2
+        z = z * self.GRAVITIY_MS2
+        return {'x': x, 'y': y, 'z': z}
 
     def set_gyro_range(self, gyro_range):
         """Sets the range of the gyroscope to range.

@@ -20,7 +20,7 @@ mpu = mpu6050(0x68, i2c)
 
 servo1_PWM = PWM(Pin("GP27"), freq=50)
 servo2_PWM = PWM(Pin("GP26"), freq=50)
-motors_enabled = False
+motors_enabled = True
 
 pid = PIDController()
 
@@ -76,14 +76,22 @@ dt = 0
 
 signal_change_counter = 0
 
+data_file = None # open("data.csv", "w")
+if data_file:
+    data_file.write("time, ax,ay,az, gx,gy,gz\n")
+    print("Opened data.csv")
+else:
+    #quit_flag = True
+    pass
+
 while not quit_flag:
     try:
         t1 = ticks_us()
 
         # measure and filter acceleration
         accel = mpu.get_accel_data()
-        a = accel[config['horiz_axis']] # type: ignore
-        b = accel[config['vert_axis']] # type: ignore
+        a = accel[config['horiz_axis']]
+        b = accel[config['vert_axis']]
         pitch_angle = math.degrees(math.atan(a / b))
 
         if config['filter'] > 0:
@@ -134,16 +142,28 @@ while not quit_flag:
                 data = {'a': accel, 'g': angular_accel, 't': mpu.get_temp(), 's': filtered_angle, 'h': heading, 'dt': dt}
                 ble.send(json.dumps(data))
 
+        if motors_enabled and data_file:
+            data_file.write("{:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n".format(
+                t1 / 1_000_000.0, 
+                accel['x'], accel['y'], accel['z'], 
+                angular_accel['x'], angular_accel['y'], angular_accel['z']
+            ))
+
+
         t2 = ticks_us()
         dt = ticks_diff(t2, t1)
 
         sleep_us(max(10, config['loop_interval'] * 1000 - dt))
 
     except (Exception, KeyboardInterrupt) as e:
-        print("Error in main loop:", e)
+        print("Exception in main loop")
         #ble.send(str(e))
         break
 #end while
+
+if data_file:
+    data_file.close()
+    print("Closed data.csv")
 
 servo1_PWM.duty_ns(0)
 servo2_PWM.duty_ns(0)
