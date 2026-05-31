@@ -1,4 +1,4 @@
-from machine import Pin, PWM, Timer, I2C
+from machine import Pin, PWM, Timer, I2C, ADC
 from utime import sleep_us, ticks_ms, ticks_us, ticks_diff
 from mpu6050 import mpu6050
 from BLESerial import BLESerial
@@ -18,9 +18,16 @@ for addr in i2c.scan():
     print(hex(addr))
 mpu = mpu6050(0x68, i2c)
 
+bat_adc = ADC(Pin("GP28"))
+
+def read_battery_percentage():
+    raw = bat_adc.read_u16()
+    voltage = raw / 65535.0 * 3.3 * 2
+    return round((voltage - 3.40) / (4.20 - 3.40) * 100)
+
 servo1_PWM = PWM(Pin("GP27"), freq=50)
 servo2_PWM = PWM(Pin("GP26"), freq=50)
-motors_enabled = True
+motors_enabled = False
 
 pid = PIDController()
 
@@ -139,7 +146,9 @@ while not quit_flag:
         if ble.is_connected() and config['status_send_period'] > 0:
             if ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
                 prev_status_time = ticks_ms()
-                data = {'a': accel, 'g': angular_accel, 't': mpu.get_temp(), 's': filtered_angle, 'h': heading, 'dt': dt}
+                bat = read_battery_percentage()
+                data = {'a': accel, 'g': angular_accel, 't': mpu.get_temp(), 's': filtered_angle, 'h': heading, 
+                        'dt': dt, 'b': bat}
                 ble.send(json.dumps(data))
 
         if motors_enabled and data_file:

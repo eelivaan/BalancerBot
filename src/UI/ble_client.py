@@ -126,7 +126,8 @@ class GUIApp(tk.Tk):
                 text += f"Temp: {data['t']:.2f}°C\n"
                 text += f"Filtered Pitch: {data['s']:.3f}°\n"
                 text += f"Heading: {data['h']:.1f}°\n"
-                text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms"
+                text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
+                text += f"Battery: {data['b']}%"
                 self.accel_label.config(text=text)
             if ok_flag.is_set():
                 self.ok_label.grid()  # Show "ok" label
