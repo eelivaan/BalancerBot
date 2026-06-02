@@ -21,6 +21,7 @@
 #==================================================================================
 
 
+# https://github.com/sparkfun/qwiic_9dof_imu_icm20948_py/tree/main
 # * Modified to use machine.I2C interface instead of qwiic_i2c *
 
 #import qwiic_i2c
