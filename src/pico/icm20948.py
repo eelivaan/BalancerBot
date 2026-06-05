@@ -990,4 +990,24 @@ class QwiicIcm20948(object):
 
 		self.startupMagnetometer()
 
+		self.axRaw, self.ayRaw, self.azRaw = 0,0,0
+		self.gxRaw, self.gyRaw, self.gzRaw = 0,0,0
+
 		return True
+	
+	def get_accel(self):
+		""" Acceleration in units of g """
+		return {'x': self.axRaw / 16384.0, 'y': self.ayRaw / 16384.0, 'z': self.azRaw / 16384.0}	
+	
+	def get_gyro(self):
+		""" Angular speed in units of deg/s """
+		return {'x': self.gxRaw / 131.0, 'y': self.gyRaw / 131.0, 'z': self.gzRaw / 131.0}
+	
+	def get_mag(self):
+		""" Magnetic field vector in units of uT """
+		return {'x': self.mxRaw / 0.15, 'y': self.myRaw / 0.15, 'z': self.mzRaw / 0.15}
+	
+	def get_temperature(self):
+		""" Chip temperature in degrees Celsius """
+		return ((self.tmpRaw - 21.0) / 333.87) + 21.0
+	
