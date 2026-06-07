@@ -1,6 +1,6 @@
 from machine import Pin, PWM, Timer, I2C, ADC
 from utime import sleep_us, sleep, ticks_ms, ticks_us, ticks_diff
-from icm20948 import QwiicIcm20948, acc_d23bw9_n34bw4
+from icm20948 import QwiicIcm20948, acc_d50bw4_n68bw8
 from BLESerial import BLESerial
 from control import PIDController
 import json, math
@@ -9,9 +9,9 @@ led_builtin = Pin("LED", Pin.OUT)
 led_builtin.on()
 
 # wait button press to start execution
-print("Press button to start...")
+#print("Press button to start...")
 start_btn = Pin("GP22", Pin.IN, Pin.PULL_UP)
-while start_btn.value(): sleep(0.1)
+#while start_btn.value(): sleep(0.1)
 last_btn_press = ticks_ms()
 
 blink_timer = Timer(-1)
@@ -30,10 +30,6 @@ def read_battery_percentage():
     voltage = raw / 65535.0 * 3.3 * 2
     return round((voltage - 3.40) / (4.20 - 3.40) * 100)
 
-servo1_PWM = PWM(Pin("GP12"), freq=50)
-servo2_PWM = PWM(Pin("GP13"), freq=50)
-motors_enabled = False
-
 pid = PIDController()
 
 def reset_control():
@@ -51,6 +47,10 @@ def load_config():
         pid.Kd = config['Kd']
         pid.target_value = config['target']
 load_config()
+
+servoL_PWM = PWM(Pin(config['left_motor_pin']), freq=50)
+servoR_PWM = PWM(Pin(config['right_motor_pin']), freq=50)
+motors_enabled = False
 
 quit_flag = False
 
@@ -79,13 +79,9 @@ def ble_msg_callback(msg):
 
 ble = BLESerial(ble_msg_callback)
 
-value_history = []
-filtered_angle = 0.0
 heading = 0.0
-
 prev_status_time = ticks_ms()
 dt = 0
-
 signal_change_counter = 0
 
 data_file = None # open("data.csv", "w")
@@ -93,13 +89,21 @@ if data_file:
     data_file.write("time, ax,ay,az, gx,gy,gz\n")
     print("Opened data.csv")
 
-b = IMU.begin()
-if not b:
+if IMU.begin():
+    if config['accel_dlpf'] == -1:
+        IMU.enableDlpfAccel(False)
+    else:
+        IMU.enableDlpfAccel(True)
+        IMU.setDLPFcfgAccel(config['accel_dlpf'])
+        
+    if config['gyro_dlpf'] == -1:
+        IMU.enableDlpfGyro(False)
+    else:
+        IMU.enableDlpfGyro(True)
+        IMU.setDLPFcfgGyro(config['gyro_dlpf'])
+else:
     print("IMU initialization unsuccessful")
     quit_flag = True
-
-IMU.enableDlpfAccel(True)
-IMU.setDLPFcfgAccel(acc_d23bw9_n34bw4)
 
 while not quit_flag:
     try:
@@ -114,20 +118,10 @@ while not quit_flag:
         b = accel[config['vert_axis']]
         pitch_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
 
-        if config['filter'] > 0:
-            value_history.append(pitch_angle)
-            #filtered_x += x / config['filter']
-            if len(value_history) > config['filter']:
-                value_history.pop(0)
-                #filtered_x -= history_x.pop(0) / config['filter']
-            filtered_angle = sum(value_history) / len(value_history)
-        else:
-            filtered_angle = pitch_angle
-
-        if abs(filtered_angle) > config['limit']:
+        if abs(pitch_angle) > config['limit']:
             signal = 0.0
         else:
-            signal = pid.calcPID(filtered_angle, config['loop_interval'] / 1000.0)
+            signal = pid.calcPID(pitch_angle, config['loop_interval'] / 1000.0)
             signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0)
 
         # track signal saturation
@@ -137,17 +131,17 @@ while not quit_flag:
                 signal_change_counter = 0
                 motors_enabled = False
                 # retry enabling motors after short delay
-                Timer(-1).init(mode=Timer.ONE_SHOT, period=2000, callback=lambda t: reset_control())
+                #Timer(-1).init(mode=Timer.ONE_SHOT, period=2000, callback=lambda t: reset_control())
         else:
             signal_change_counter = 0
 
         # motor control
         if motors_enabled:
-            servo1_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
-            servo2_PWM.duty_ns(int((1.5 - signal * 1.0) * 1000000))
+            servoL_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
+            servoR_PWM.duty_ns(int((1.5 - signal * 1.0) * 1000000))
         else:
-            servo1_PWM.duty_ns(0)
-            servo2_PWM.duty_ns(0)
+            servoL_PWM.duty_ns(0)
+            servoR_PWM.duty_ns(0)
         #led_external_PWM.duty_u16(min(65535, round(abs(signal) * 65535.0)))
 
         # measure and track heading
@@ -160,7 +154,7 @@ while not quit_flag:
             if ticks_diff(ticks_ms(), prev_status_time) > config['status_send_period']:
                 prev_status_time = ticks_ms()
                 bat = read_battery_percentage()
-                data = {'a': accel, 'g': angular_accel, 't': IMU.get_temperature(), 's': filtered_angle, 
+                data = {'a': accel, 'g': angular_accel, 't': IMU.get_temperature(), 's': pitch_angle, 
                         'h': heading, 'dt': dt, 'b': bat}
                 ble.send(json.dumps(data))
 
@@ -178,9 +172,15 @@ while not quit_flag:
 
         sleep_us(max(10, config['loop_interval'] * 1000 - dt))
 
-        # terminate when the button is pressed
+        # toggle motors when button is pressed
         if not start_btn.value() and ticks_diff(ticks_ms(), last_btn_press) > 2000:
-            quit_flag = True
+            last_btn_press = ticks_ms()
+            if not motors_enabled:
+                reset_control()
+            else:
+                motors_enabled = False
+                # terminate
+                quit_flag = True
 
     except (Exception, KeyboardInterrupt) as e:
         print("Exception in main loop: ", e)
@@ -191,8 +191,8 @@ if data_file:
     data_file.close()
     print("Closed data.csv")
 
-servo1_PWM.duty_ns(0)
-servo2_PWM.duty_ns(0)
+servoL_PWM.duty_ns(0)
+servoR_PWM.duty_ns(0)
 
 sleep_us(2_000_000)
 

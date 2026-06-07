@@ -992,6 +992,8 @@ class QwiicIcm20948(object):
 
 		self.axRaw, self.ayRaw, self.azRaw = 0,0,0
 		self.gxRaw, self.gyRaw, self.gzRaw = 0,0,0
+		self.mxRaw, self.myRaw, self.mzRaw = 0,0,0
+		self.tmpRaw = 0
 
 		return True
 	
