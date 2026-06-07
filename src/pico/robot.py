@@ -1,0 +1,144 @@
+from machine import Pin, ADC, PWM, I2C, Timer
+from icm20948 import QwiicIcm20948
+from BLESerial import BLESerial
+import json, math, time
+
+
+class BalancerBot:
+    def __init__(self, config_load_callback=None):
+        self.led_builtin = Pin("LED", Pin.OUT)
+        self.led_builtin.on()
+        self.blink_timer = None
+
+        self.bat_adc = ADC(Pin("GP26"))
+
+        self.config = {}
+        self.config_load_cb = config_load_callback
+        self.load_config()
+
+        self.servoL_PWM = PWM(Pin(self.config['left_motor_pin']), freq=50)
+        self.servoR_PWM = PWM(Pin(self.config['right_motor_pin']), freq=50)
+
+        self.IMU_i2c = I2C(0, scl=Pin("GP21"), sda=Pin("GP20"), freq=400000)
+        print("I2C Scan result: ", end='')
+        for addr in self.IMU_i2c.scan():
+            print(hex(addr))
+        self.IMU = QwiicIcm20948(self.IMU_i2c)
+
+        self.button = Pin("GP22", Pin.IN, Pin.PULL_UP)
+        self.button_pressed_flag = False
+
+        self.ble = None
+
+        self.heading = 0.0
+        self.motors_enabled = False
+        self.quit_flag = False
+
+
+    def load_config(self):
+        with open('config.json', 'r') as f:
+            self.config = json.load(f)
+            if self.config_load_cb:
+                self.config_load_cb(self.config)
+
+
+    def startBlink(self, period=400):
+        self.blink_timer = Timer(-1)
+        self.blink_timer.init(period=period, callback=lambda t: self.led_builtin.toggle())
+
+
+    def read_battery_percentage(self):
+        raw = self.bat_adc.read_u16()
+        voltage = raw / 65535.0 * 3.3 * 2
+        return round((voltage - 3.40) / (4.20 - 3.40) * 100)
+    
+
+    def wait_button_press(self):
+        while self.button.value(): time.sleep(0.1)
+        self.button_pressed_flag = False
+
+
+    def button_pressed(self):
+        if not self.button.value():
+            if not self.button_pressed_flag:
+                self.button_pressed_flag = True
+                return True
+            else:
+                return False
+        self.button_pressed_flag = False
+        return False
+    
+
+    def startIMU(self):
+        if self.IMU.begin():
+            if self.config['accel_dlpf'] == -1:
+                self.IMU.enableDlpfAccel(False)
+            else:
+                self.IMU.enableDlpfAccel(True)
+                self.IMU.setDLPFcfgAccel(self.config['accel_dlpf'])
+                
+            if self.config['gyro_dlpf'] == -1:
+                self.IMU.enableDlpfGyro(False)
+            else:
+                self.IMU.enableDlpfGyro(True)
+                self.IMU.setDLPFcfgGyro(self.config['gyro_dlpf'])
+            self.IMU_start_time = time.ticks_ms()
+        else:
+            print("IMU initialization unsuccessful")
+            self.quit_flag = True
+
+    
+    def updateIMU(self):
+        if self.IMU.dataReady():
+            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
+            # track heading
+            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * (self.config['loop_interval'] / 1000.0)
+            self.heading = math.fmod(self.heading, 360.0)
+            return True
+        return False
+    
+
+    def measure_accel_with_time(self):
+        v = self.IMU.get_accel()
+        v['t'] = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+        return v
+
+    def measure_gyro_with_time(self):
+        v = self.IMU.get_gyro()
+        v['t'] = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+        return v
+
+
+    def startBLE(self, ble_msg_callback):
+        self.ble = BLESerial(ble_msg_callback)
+    
+    
+    def motor_input(self, signal):
+        # motor control
+        if self.motors_enabled:
+            self.servoL_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
+            self.servoR_PWM.duty_ns(int((1.5 - signal * 1.0) * 1000000))
+        else:
+            self.servoL_PWM.duty_ns(0)
+            self.servoR_PWM.duty_ns(0)
+
+
+    def send_status(self, pitch, dt):
+        if self.ble and self.ble.is_connected():
+            bat = self.read_battery_percentage()
+            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(), 't': self.IMU.get_temperature(), 
+                    's': pitch, 'h': self.heading, 'dt': dt, 'b': bat}
+            self.ble.send(json.dumps(data))
+
+
+    def off(self):
+        self.quit_flag = True
+        self.motor_input(0)
+        
+        if self.blink_timer:
+            self.blink_timer.deinit()
+        self.led_builtin.off()
+
+        if self.ble:
+            self.ble.deactivate()
+        print("Finished")
