@@ -123,6 +123,7 @@ class GUIApp(tk.Tk):
                 data = msgQueue.get_nowait()
                 text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
                 text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
+                text += f"Magnetometer: {data['m']['x']:.0f}  {data['m']['y']:.0f}  {data['m']['z']:.0f}\n"
                 text += f"Temp: {data['t']:.2f}°C\n"
                 text += f"Filtered Pitch: {data['s']:.3f}°\n"
                 text += f"Heading: {data['h']:.1f}°\n"

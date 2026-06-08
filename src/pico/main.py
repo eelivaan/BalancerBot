@@ -1,7 +1,7 @@
 from machine import Pin
 from utime import sleep_us, sleep, ticks_ms, ticks_us, ticks_diff
 from control import PIDController
-from robot import BalancerBot
+from robot import BalancerBot, sign
 import json, math
 
 PID = PIDController()
@@ -77,11 +77,12 @@ while not bot.quit_flag:
         omega = math.radians(gyro[bot.config['pitch_axis']])
         Domega = (omega - prev_omega) / dt
         prev_omega = omega
-        r = 0.04  # 4 cm
+        r = bot.config['IMU_offset']  # 4 cm
 
-        a = accel[bot.config['horiz_axis']] * 9.81 - Domega * r
-        b = accel[bot.config['vert_axis']] * 9.81 - omega**2 * r
+        a = accel[bot.config['horiz_axis']] #* 9.81 + Domega * r
+        b = accel[bot.config['vert_axis']] #* 9.81 + omega**2 * r
         pitch_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
+        #pitch_angle = math.degrees(math.acos(min(1.0, b))) * sign(_pitch_angle)
 
         if abs(pitch_angle) > bot.config['limit']:
             signal = 0.0
@@ -124,6 +125,7 @@ while not bot.quit_flag:
         if bot.button_pressed():
             if not bot.motors_enabled:
                 reset_control()
+                print("Motors active")
             else:
                 bot.motors_enabled = False
                 # terminate

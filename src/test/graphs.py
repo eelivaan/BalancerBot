@@ -2,8 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from serial import Serial
 from time import sleep
-import json
+import json, math
 from collections import deque
+from control import PIDController
 
 code = """
 from robot import BalancerBot
@@ -18,8 +19,26 @@ while 1:
 	sleep_ms(100)
 """
 
+class Plotter:
+	history_N = 400
+
+	def addTimeSeries(self, key, axis):
+		for x in 'txyz':
+			setattr(self, f'{key}{x}', deque(maxlen=Plotter.history_N))
+		for x in 'xyz':
+			setattr(self, f'plot{key}{x}', axis.plot([], [], label=x))
+
+	def addFrame(self, key, frameobj: dict):
+		timeData = getattr(self, f'{key}t')
+		timeData.append(frameobj['t'])
+		for x in 'xyz':
+			data = getattr(self, f'{key}{x}')
+			data.append(frameobj[x])
+			getattr(self, f'plot{key}{x}').set_data(np.array(timeData), np.array(data))
+
+
 def main() -> None:
-	history = 1000
+	history = 400
 	at = deque(maxlen=history)
 	ax = deque(maxlen=history)
 	ay = deque(maxlen=history)
@@ -30,7 +49,11 @@ def main() -> None:
 	gy = deque(maxlen=history)
 	gz = deque(maxlen=history)
 
-	fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+	pitch = deque(maxlen=history)
+	pitch_raw = deque(maxlen=history)
+	pidOut = deque(maxlen=history)
+
+	fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
 	# Top plot
 	plotAx, = axes[0].plot([], [], label="x")
@@ -38,21 +61,29 @@ def main() -> None:
 	plotAz, = axes[0].plot([], [], label="z")
 	axes[0].set_title("Accelerometer")
 	axes[0].set_ylabel("Value")
-	axes[0].grid(True, alpha=0.3)
-	axes[0].legend(loc="upper right")
+	axes[0].grid(True, alpha=0.7)
+	axes[0].legend(loc="upper left")
 
 	# Bottom plot
 	plotGx, = axes[1].plot([], [], label="x")
 	plotGy, = axes[1].plot([], [], label="y")
 	plotGz, = axes[1].plot([], [], label="z")
 	axes[1].set_title("Gyroscope")
-	axes[1].set_xlabel("Time")
 	axes[1].set_ylabel("Value")
-	axes[1].grid(True, alpha=0.3)
-	axes[1].legend(loc="upper right")
+	axes[1].grid(True, alpha=0.7)
+	axes[1].legend(loc="upper left")
+
+	plotPitchRaw, = axes[2].plot([], [], label="raw pitch")
+	plotPitch, = axes[2].plot([], [], label="pitch")
+	plotPID, = axes[2].plot([], [], label="PID output")
+	axes[2].set_title("Pitch")
+	axes[2].set_xlabel("Time")
+	axes[2].set_ylabel("Value")
+	axes[2].grid(True, alpha=0.7)
+	axes[2].legend(loc="upper left")
 
 	plt.tight_layout()
-	plt.show(block=False)
+	#plt.show(block=False)
 
 	with Serial("COM9", 115200, timeout=2) as ser:
 		print("COM9 opened")
@@ -70,6 +101,9 @@ def main() -> None:
 
 		try:
 			print("Running matplotlib event loop (close plot window to stop)...")
+			prev_omega = 0
+			PID = PIDController()
+			PID.Kp = 0.1
 			while plt.fignum_exists(fig.number):
 				if ser.in_waiting:
 					msg = ser.read_all().decode(errors="ignore")
@@ -97,12 +131,34 @@ def main() -> None:
 							plotGz.set_data(np.array(gt), np.array(gz))
 							axes[1].relim()
 							axes[1].autoscale_view()
+
+							omega = math.radians(gyro['y'])
+							Domega = (omega - prev_omega) / 0.1
+							prev_omega = omega
+							r = 0.04  # 4 cm
+							a = accel['z'] * 9.81 + Domega * r
+							b = accel['x'] * 9.81 + omega**2 * r
+							pitch_angle = math.degrees(math.atan(a / b))
+							pitch.append(pitch_angle)
+
+							#raw_pitch_angle = math.degrees(math.atan(accel['z'] / accel['x']))
+							raw_pitch_angle = math.degrees(math.acos(min(1.0, accel['x'])))
+							pitch_raw.append(raw_pitch_angle)
+
+							pidOut.append(PID.calcPID(raw_pitch_angle, 0.1) * 10.0)
+
+							plotPitch.set_data(np.array(at), np.array(pitch))
+							plotPitchRaw.set_data(np.array(at), np.array(pitch_raw))
+							plotPID.set_data(np.array(at), np.array(pidOut))
+							axes[2].relim()
+							axes[2].autoscale_view()
 					except StopIteration:
 						pass
-				plt.pause(0.05)
+				plt.pause(0.03)
 
 		except Exception:
 			ser.write(b'\x03\n') # CTRL-C
+			ser.flush()
 			raise
 		
 		ser.write(b'\x03\n') # CTRL-C

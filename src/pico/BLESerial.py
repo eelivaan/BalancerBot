@@ -1,5 +1,6 @@
 import bluetooth
 import struct
+import time
 
 class BLESerial:
     _IRQ_CENTRAL_CONNECT = 1
@@ -28,6 +29,9 @@ class BLESerial:
 
     def __init__(self, msg_callback=None, name="PicoBLE") -> None:
         self.ble = bluetooth.BLE()
+        # reset BLE radio?
+        self.ble.active(False)
+        time.sleep_ms(200)
         self.connections = set()
         self.tx_handle = None
         self.rx_handle = None

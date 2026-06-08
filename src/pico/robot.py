@@ -3,6 +3,8 @@ from icm20948 import QwiicIcm20948
 from BLESerial import BLESerial
 import json, math, time
 
+def sign(x):
+    return 0 if x == 0 else (1 if x > 0 else -1)
 
 class BalancerBot:
     def __init__(self, config_load_callback=None):
@@ -49,6 +51,8 @@ class BalancerBot:
 
     def read_battery_percentage(self):
         raw = self.bat_adc.read_u16()
+        if raw < 10:
+            return -1
         voltage = raw / 65535.0 * 3.3 * 2
         return round((voltage - 3.40) / (4.20 - 3.40) * 100)
     
@@ -60,12 +64,11 @@ class BalancerBot:
 
     def button_pressed(self):
         if not self.button.value():
-            if not self.button_pressed_flag:
-                self.button_pressed_flag = True
-                return True
-            else:
-                return False
-        self.button_pressed_flag = False
+            self.button_pressed_flag = True
+            return False
+        elif self.button_pressed_flag:
+            self.button_pressed_flag = False
+            return True
         return False
     
 
@@ -83,6 +86,7 @@ class BalancerBot:
                 self.IMU.enableDlpfGyro(True)
                 self.IMU.setDLPFcfgGyro(self.config['gyro_dlpf'])
             self.IMU_start_time = time.ticks_ms()
+            self.IMU_last_update_time = -1
         else:
             print("IMU initialization unsuccessful")
             self.quit_flag = True
@@ -94,18 +98,25 @@ class BalancerBot:
             # track heading
             self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * (self.config['loop_interval'] / 1000.0)
             self.heading = math.fmod(self.heading, 360.0)
+            # track time
+            self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
             return True
         return False
     
 
     def measure_accel_with_time(self):
         v = self.IMU.get_accel()
-        v['t'] = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+        v['t'] = self.IMU_last_update_time
         return v
 
     def measure_gyro_with_time(self):
         v = self.IMU.get_gyro()
-        v['t'] = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+        v['t'] = self.IMU_last_update_time
+        return v
+
+    def measure_mag_with_time(self):
+        v = self.IMU.get_mag()
+        v['t'] = self.IMU_last_update_time
         return v
 
 
@@ -116,8 +127,9 @@ class BalancerBot:
     def motor_input(self, signal):
         # motor control
         if self.motors_enabled:
-            self.servoL_PWM.duty_ns(int((1.5 + signal * 1.0) * 1000000))
-            self.servoR_PWM.duty_ns(int((1.5 - signal * 1.0) * 1000000))
+            pulse = signal * 100.0 #sign(signal) * (5 + abs(signal) * 100)
+            self.servoL_PWM.duty_ns(int((150 + pulse) * 10000))
+            self.servoR_PWM.duty_ns(int((150 - pulse) * 10000))
         else:
             self.servoL_PWM.duty_ns(0)
             self.servoR_PWM.duty_ns(0)
