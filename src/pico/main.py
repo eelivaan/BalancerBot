@@ -3,13 +3,14 @@ from control import PIDController
 from robot import BalancerBot, sign
 import json, math
 
-PID = PIDController()
+# controller for balancing
+pitch_control = PIDController()
+# controller for horizontal position
+target_control = PIDController()
 
 def on_config_load(config):
-    PID.Kp = config['Kp']
-    PID.Ki = config['Ki']
-    PID.Kd = config['Kd']
-    PID.target_value = config['target']
+    pitch_control.configure(config['pid0'])
+    target_control.configure(config['pid1'])
 
 bot = BalancerBot(on_config_load)
 
@@ -20,18 +21,16 @@ bot = BalancerBot(on_config_load)
 bot.startBlink()
 
 def ble_msg_callback(msg):
-    global pitch_angle
+    global pitch_angle, log_pending
     print("Received BLE message")
     try:
         params = json.loads(msg)
         # update PID params
-        if params.get('type') == 'pid':
-            PID.Kp = params['Kp']
-            PID.Ki = params['Ki']
-            PID.Kd = params['Kd']
-            PID.target_value = params['tgt']
-            PID.err_integral = 0.0
+        if params.get('type') == 'pid0':
+            pitch_control.configure(params)
             bot.motors_enabled = params['en']
+        elif params.get('type') == 'pid1':
+            target_control.configure(params)
         # download config file
         elif params.get('type') == 'config':
             with open("config.json", "w") as f:
@@ -42,6 +41,9 @@ def ble_msg_callback(msg):
         elif params.get('type') == 'calibrate':
             bot.IMU.calibrate()
             pitch_angle = None
+        elif params.get('type') == 'log':
+            bot.start_logging(['time', 'pitch', 'control', 'motor_position'], duration=5)
+            log_pending = True
     except (json.JSONDecodeError, KeyError) as e:
         print("Unhandled BLE message: ", msg)
 
@@ -50,15 +52,20 @@ bot.startBLE(ble_msg_callback)
 bot.startIMU()
 
 def reset_control():
+    global motor_traversal
     bot.motors_enabled = True
-    PID.err_integral = 0.0
+    pitch_control.err_integral = 0.0
+    motor_traversal = 0.0
 
 prev_status_time = ticks_ms()
 tick_duration = 0
+max_tick_duration = 0
 signal_change_counter = 0
+log_pending = False
 
 prev_omega = 0.0
 pitch_angle = None
+motor_traversal = 0.0
 
 while not bot.quit_flag:
     try:
@@ -66,6 +73,7 @@ while not bot.quit_flag:
 
         # timestep in seconds
         dt = bot.config['loop_interval'] / 1000.0
+        pitch_offset = bot.config['pid0']['target']
 
         if bot.updateIMU():
             # measurements
@@ -86,21 +94,21 @@ while not bot.quit_flag:
                 pitch_angle = g_angle
             else:
                 acc_delta_angle = g_angle - pitch_angle
-
                 gyro_delta_angle = gyro[bot.config['pitch_axis']] * dt
-
-                #if sign(acc_delta_angle) != sign(gyro_delta_angle):
-                #    clamped_delta = gyro_delta_angle
-                #else:
                 clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
                 pitch_angle += clamped_delta
 
+                # enable motors when first lifted to balance position
+                if not bot.motors_enabled and abs(pitch_angle - pitch_offset) < 1.0:
+                    reset_control()
+
             # control signal from pitch angle
-            if abs(pitch_angle) > bot.config['limit']:
+            if abs(pitch_angle) > bot.config['pitch_limit']:
                 signal = 0.0
             else:
-                signal = PID.calcPID(pitch_angle, dt)
-                signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0) # clamp [-1 1]
+                pitch_control.target_value = pitch_offset + target_control.calcPID(motor_traversal, dt)
+                signal = pitch_control.calcPID(pitch_angle, dt)
+                signal = sign(signal) * math.pow(min(1.0, abs(signal)), bot.config['signal_power'])
         else:
             signal = 0.0
 
@@ -116,26 +124,36 @@ while not bot.quit_flag:
             signal_change_counter = 0
 
         bot.motor_input(signal)
+        motor_traversal -= signal * dt  # estimate integral of motor rotation
 
         # send status info to laptop periodically
         if bot.config['status_send_period'] > 0 and ticks_diff(ticks_ms(), prev_status_time) > bot.config['status_send_period']:
+            bot.send_status(pitch_angle, max_tick_duration, pitch_control.target_value)
+            max_tick_duration = 0
             prev_status_time = ticks_ms()
-            bot.send_status(pitch_angle, tick_duration)
 
-        # toggle motors when button is pressed
+        # quit when button is pressed
         if bot.button_pressed():
-            if not bot.motors_enabled:
-                reset_control()
-                print("Motors active")
-            else:
-                bot.motors_enabled = False
-                # terminate
-                bot.quit_flag = True
+            bot.motors_enabled = False
+            # terminate
+            bot.quit_flag = True
 
         t2 = ticks_us()
         tick_duration = ticks_diff(t2, t1)
+        max_tick_duration = max(tick_duration, max_tick_duration)
 
         sleep_us(max(10, bot.config['loop_interval'] * 1000 - tick_duration))
+
+        # log if needed
+        if bot.logging():
+            bot.log([bot.time_ms() / 1000.0, pitch_angle, signal, motor_traversal])
+        elif log_pending:
+            log_pending = False
+            bot.ble.send('log_output') # type: ignore
+            with open('log.csv', 'r') as f:
+                for line in f:
+                    bot.ble.send(line) # type: ignore
+            bot.ble.send('log_end') # type: ignore
 
     except (Exception, KeyboardInterrupt) as e:
         print("Exception in main loop: ", e)

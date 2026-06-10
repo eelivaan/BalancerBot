@@ -35,6 +35,10 @@ class BalancerBot:
         self.heading = 0.0
         self.motors_enabled = False
         self.quit_flag = False
+        self.logfile = None
+
+        self.last_ticks = time.ticks_ms()
+        self.internal_time = 0
 
 
     def load_config(self):
@@ -54,7 +58,7 @@ class BalancerBot:
         if raw < 10:
             return -1
         voltage = raw / 65535.0 * 3.3 * 2
-        return round((voltage - 3.40) / (4.20 - 3.40) * 100)
+        return round((voltage - 3.40) / (4.00 - 3.40) * 100)
     
 
     def wait_button_press(self):
@@ -127,7 +131,7 @@ class BalancerBot:
     def motor_input(self, signal):
         # motor control
         if self.motors_enabled:
-            pulse = signal * 100.0 #sign(signal) * (5 + abs(signal) * 100)
+            pulse = sign(signal) * (self.config['motor_PWM_min'] + abs(signal) * 100)
             self.servoL_PWM.duty_ns(int((150 + pulse) * 10000))
             self.servoR_PWM.duty_ns(int((150 - pulse) * 10000))
         else:
@@ -135,17 +139,27 @@ class BalancerBot:
             self.servoR_PWM.duty_ns(0)
 
 
-    def send_status(self, pitch, dt):
+    def send_status(self, pitch, dt, pitch_target):
         if self.ble and self.ble.is_connected():
             bat = self.read_battery_percentage()
             data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(), 't': self.IMU.get_temperature(), 
-                    's': pitch, 'h': self.heading, 'dt': dt, 'b': bat}
+                    's': pitch, 'st': pitch_target, 'h': self.heading, 'dt': dt, 'b': bat}
             self.ble.send(json.dumps(data))
+
+
+    def time_ms(self):
+        now = time.ticks_ms()
+        self.internal_time += time.ticks_diff(now, self.last_ticks)
+        self.last_ticks = now
+        return self.internal_time
 
 
     def off(self):
         self.quit_flag = True
         self.motor_input(0)
+
+        if self.logging():
+            self.stop_logging()
         
         if self.blink_timer:
             self.blink_timer.deinit()
@@ -154,3 +168,36 @@ class BalancerBot:
         if self.ble:
             self.ble.deactivate()
         print("Finished")
+
+
+    def start_logging(self, fields: list[str], logname='log', duration=5):
+        self.logfile = open(logname + '.csv', 'w')
+        if self.logfile:
+            self.logfile.write(','.join(fields) + '\n')
+            self.log_end_time = time.time() + min(duration, 10)
+            print("Started logging for", duration, "seconds")
+            return True
+        else:
+            return False
+
+    def log(self, values: list):
+        if self.logging():
+            self.logfile.write(','.join(str(v) for v in values) + '\n') # type: ignore
+            return True
+        else:
+            return False
+        
+    def logging(self):
+        if self.logfile and time.time() > self.log_end_time:
+            self.stop_logging()
+            return False
+        return self.logfile != None
+        
+    def stop_logging(self):
+        if self.logfile:
+            self.logfile.close()
+            self.logfile = None
+            print("Stopped logging")
+            return True
+        else:
+            return False

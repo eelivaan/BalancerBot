@@ -1,16 +1,28 @@
-{"Kp": 0.15,
-"Ki": 0.45,
-"Kd": 0.0001,
-"target": 2.5,
-"limit": 70.0,
-"horiz_axis": "z",
-"vert_axis": "x",
-"pitch_axis": "y",
-"accel_dlpf": 3,
-"gyro_dlpf": 2,
-"signal_cutoff_ms": 1500,
-"loop_interval": 20,
-"status_send_period": 240,
-"left_motor_pin": "GP9",
-"right_motor_pin": "GP8",
-"IMU_offset": 0.04}
+{
+    "pid0": {
+        "Kp": 0.11,
+        "Ki": 0.2,
+        "Kd": 0.0,
+        "target": 2.5
+    },
+    "pid1": {
+        "Kp": 0.5,
+        "Ki": 0.0,
+        "Kd": 0.0,
+        "target": 0.0
+    },
+    "pitch_limit": 70.0,
+    "horiz_axis": "z",
+    "vert_axis": "x",
+    "pitch_axis": "y",
+    "accel_dlpf": 3,
+    "gyro_dlpf": 2,
+    "signal_cutoff_ms": 1100,
+    "signal_power": 1.0,
+    "loop_interval": 20,
+    "status_send_period": 240,
+    "left_motor_pin": "GP9",
+    "right_motor_pin": "GP8",
+    "motor_PWM_min": 2,
+    "IMU_offset": 0.04
+}

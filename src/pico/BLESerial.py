@@ -114,13 +114,18 @@ class BLESerial:
 
 if __name__ == "__main__":
     from machine import Pin
-    from utime import sleep_ms
+    from utime import sleep_ms, ticks_us, ticks_diff
+    import json
     # test connectivity
     ble = BLESerial()
     ledpin = Pin("LED", Pin.OUT)
     while True:
         try:
+            t1 = ticks_us()
             ledpin.toggle()
+            ble.send(json.dumps({'a:': 1.0, 'b': 2.0, 'c': 3.0}))
+            t2 = ticks_us()
+            print(ticks_diff(t2,t1) / 1000.0, 'ms')
             sleep_ms(500)
         except KeyboardInterrupt:
             break

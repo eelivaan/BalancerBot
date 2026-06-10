@@ -5,6 +5,8 @@ import threading
 from bleak import BleakScanner, BleakClient
 from queue import Queue
 import json
+import numpy as np
+import matplotlib.pyplot as plt
 
 DEVICE_NAME = "PicoBLE"
 
@@ -18,62 +20,80 @@ connected_flag = threading.Event()
 stop_flag = threading.Event()
 ok_flag = threading.Event()
 
+log = []  # Store log data received from Pico
+display_log_flag = threading.Event()
 
-# called when data is received from Pico
-def on_notify(sender, data: bytearray):
-    message = data.decode("utf-8", errors="replace").strip()
-    if message == "ok":
-        ok_flag.set()
-    else:
-        try:
-            js = json.loads(message)  # Validate JSON
-            msgQueue.put(js)
-        except json.JSONDecodeError:
-            print(f"Pico: {message}")
+class BLEThread(threading.Thread):
+    receiving_log = False
 
-
-async def main():
-    while not stop_flag.is_set():
-        print(f"Scanning for '{DEVICE_NAME}'...")
-        try:
-            device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=5.0)
-        except Exception as e:
-            print(f"Error during BLE scan: {e}")
-            await asyncio.sleep(5)
-            continue
-
-        if device is None:
-            print("Device not found. Make sure main.py is running on the Pico.")
+    # called when data is received from Pico
+    def on_notify(self, sender, data: bytearray):
+        message = data.decode("utf-8", errors="replace").strip()
+        if message == "ok":
+            ok_flag.set()
+        elif message == "log_output":
+            log.clear()
+            self.receiving_log = True
+            msgQueue.put("wait...")
+        elif message == "log_end":
+            self.receiving_log = False
+            display_log_flag.set()
+        elif self.receiving_log:
+            log.append(message)
         else:
-            print(f"Found: {device.name} [{device.address}]")
+            try:
+                js = json.loads(message)  # Validate JSON
+                msgQueue.put(js)
+            except json.JSONDecodeError:
+                print(f"Pico: {message}")
+    #end on_notify
 
-            async with BleakClient(device) as client:
-                print("Connected. Subscribing to notifications...")
-                await client.start_notify(UART_TX_UUID, on_notify)
-                connected_flag.set()
-                print("Ready.\n")
+    async def main(self):
+        while not stop_flag.is_set():
+            print(f"Scanning for '{DEVICE_NAME}'...")
+            try:
+                device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=5.0)
+            except Exception as e:
+                print(f"Error during BLE scan: {e}")
+                await asyncio.sleep(5)
+                continue
 
-                while not stop_flag.is_set() and client.is_connected:
-                    if not sendQueue.empty():
-                        msg = sendQueue.get_nowait() + '\0'
-                        # 20 char limit per BLE packet, so split if needed
-                        for i in range(0, len(msg), 20):
-                            chunk = msg[i:i+20]
-                            await client.write_gatt_char(UART_RX_UUID, chunk.encode("utf-8"))
-                    await asyncio.sleep(0.05)
+            if device is None:
+                print("Device not found. Make sure main.py is running on the Pico.")
+            else:
+                print(f"Found: {device.name} [{device.address}]")
 
-                if client.is_connected:
-                    await client.stop_notify(UART_TX_UUID)
-                    print("Disconnected.")
-                connected_flag.clear()
-#end async main
+                async with BleakClient(device) as client:
+                    print("Connected. Subscribing to notifications...")
+                    await client.start_notify(UART_TX_UUID, self.on_notify)
+                    connected_flag.set()
+                    print("Ready.\n")
+
+                    while not stop_flag.is_set() and client.is_connected:
+                        if not sendQueue.empty():
+                            msg = sendQueue.get_nowait() + '\0'
+                            # 20 char limit per BLE packet, so split if needed
+                            for i in range(0, len(msg), 20):
+                                chunk = msg[i:i+20]
+                                await client.write_gatt_char(UART_RX_UUID, chunk.encode("utf-8"))
+                        await asyncio.sleep(0.05)
+
+                    if client.is_connected:
+                        await client.stop_notify(UART_TX_UUID)
+                        print("Disconnected.")
+                    connected_flag.clear()
+    #end async main
+
+    def run(self):
+        asyncio.run(self.main())
+#end BLEThread
 
 
 class GUIApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Control Panel")
-        self.geometry("600x450")
+        self.geometry("600x480")
 
         font = ("Consolas", 11)
         style = ttk.Style()
@@ -87,30 +107,38 @@ class GUIApp(tk.Tk):
         self.motors_checkbox.grid(pady=5, padx=5, row=1, column=0)
         self.motors_checkbox.configure(command=self.send_pid)  # Call send_pid when toggled
 
-        for i, t in enumerate(["Kp", "Ki", "Kd", "Target"]):
+        for i, t in enumerate(["Kp", "Ki", "Kd", "target"]):
             ttk.Label(self, text=f"{t}:", font=font).grid(pady=5, padx=5, row=2+i, column=0)
-            setattr(self, t, tk.DoubleVar(value=0.0))
-            setattr(self, f"{t}Edit", ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.001, textvariable=getattr(self, t), width=6))
-            getattr(self, f"{t}Edit").grid(pady=5, padx=5, row=2+i, column=1)
-            getattr(self, f"{t}Edit").configure(command=self.send_pid)  # Call send_pid on value change
-            getattr(self, f"{t}Edit").bind("<Return>", lambda event: self.send_pid())  # Call send_pid on enter key
+            for c in range(2):
+                var = tk.DoubleVar(value=0.0)
+                setattr(self, f"{t}{c}", var)
+                spinBox = ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.001, textvariable=var, width=7)
+                setattr(self, f"{t}{c}Edit", spinBox)
+                spinBox.grid(pady=5, padx=5, row=2+i, column=1+c)
+                spinBox.configure(command=self.send_pid)  # Call send_pid on value change
+                spinBox.bind("<Return>", lambda event: self.send_pid())  # Call send_pid on enter key
 
         # load initial PID values from config.json
         with open("config.json", "r") as f:
             config = json.load(f)
-            self.Kp.set(config.get("Kp", 0.030))
-            self.Ki.set(config.get("Ki", 0.125))
-            self.Kd.set(config.get("Kd", 0.0))
-            self.Target.set(config.get("target", 0.0))
+            for c in range(2):
+                pid = config[f'pid{c}']
+                getattr(self, f"Kp{c}").set(pid.get("Kp", 0.0))
+                getattr(self, f"Ki{c}").set(pid.get("Ki", 0.0))
+                getattr(self, f"Kd{c}").set(pid.get("Kd", 0.0))
+                getattr(self, f"target{c}").set(pid.get("target", 0.0))
 
         self.download_btn = ttk.Button(self, text="Download config.json", command=self.download_config)
         self.download_btn.grid(pady=10, padx=5, row=6, column=0)
 
-        self.stop_btn = ttk.Button(self, text="Stop program", command=self.send_stop_signal)
+        self.stop_btn = ttk.Button(self, text="Stop program", command=lambda: self.send_typed('quit'))
         self.stop_btn.grid(pady=10, padx=5, row=6, column=1)
 
-        self.calibrate_btn = ttk.Button(self, text="Calibrate", command=self.send_calibrate)
+        self.calibrate_btn = ttk.Button(self, text="Calibrate", command=lambda: self.send_typed('calibrate'))
         self.calibrate_btn.grid(pady=10, padx=5, row=6, column=2)
+
+        self.log_btn = ttk.Button(self, text="Capture", command=lambda: self.send_typed('log'))
+        self.log_btn.grid(pady=10, padx=5, row=6, column=3)
 
         self.ok_label = ttk.Label(self, text="ok", font=("Consolas", 14), foreground="#0b0c0b", background="#a3f9a3")
         self.ok_label.grid(pady=10, padx=5, row=7, column=0)
@@ -124,19 +152,26 @@ class GUIApp(tk.Tk):
         if connected_flag.is_set():
             if not msgQueue.empty():
                 data = msgQueue.get_nowait()
-                text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
-                text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
-                text += f"Magnetometer: {data['m']['x']:.0f}  {data['m']['y']:.0f}  {data['m']['z']:.0f}\n"
-                text += f"Temp: {data['t']:.2f}°C\n"
-                text += f"Filtered Pitch: {data['s']:.3f}°\n"
-                text += f"Heading: {data['h']:.1f}°\n"
-                text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
-                text += f"Battery: {data['b']}%"
-                self.accel_label.config(text=text)
+                if isinstance(data, str):
+                    self.accel_label.config(text=data)
+                else:
+                    text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
+                    text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
+                    text += f"Magnetometer: {data['m']['x']:.0f}  {data['m']['y']:.0f}  {data['m']['z']:.0f}\n"
+                    text += f"Temp: {data['t']:.2f}°C\n"
+                    text += f"Filtered Pitch: {data['s']:.3f}°\n"
+                    text += f"Pitch Target: {data['st']:.3f}°\n"
+                    text += f"Heading: {data['h']:.1f}°\n"
+                    text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
+                    text += f"Battery: {data['b']}%"
+                    self.accel_label.config(text=text)
             if ok_flag.is_set():
                 self.ok_label.grid()  # Show "ok" label
                 ok_flag.clear()
                 self.after(2000, lambda: self.ok_label.grid_remove())
+            if display_log_flag.is_set():
+                self.show_log()
+                display_log_flag.clear()
         else:
             self.accel_label.config(text="N/A")
 
@@ -148,10 +183,12 @@ class GUIApp(tk.Tk):
         stop_flag.set()
         with open("config.json", "r") as f:
             config = json.load(f)
-            config['Kp'] = self.Kp.get()
-            config['Ki'] = self.Ki.get()
-            config['Kd'] = self.Kd.get()
-            config['target'] = self.Target.get()
+            for c in range(2):
+                pid = config[f'pid{c}']
+                pid['Kp'] = getattr(self, f'Kp{c}').get()
+                pid['Ki'] = getattr(self, f'Ki{c}').get()
+                pid['Kd'] = getattr(self, f'Kd{c}').get()
+                pid['target'] = getattr(self, f'target{c}').get()
             with open("config.json", "w") as f:
                 json.dump(config, f, separators=(',\n', ': ')) # type: ignore
                 print("config.json updated")
@@ -159,9 +196,13 @@ class GUIApp(tk.Tk):
 
     def send_pid(self):
         try:
-            msg = json.dumps({"type": "pid", 
-                              "Kp": self.Kp.get(), "Ki": self.Ki.get(), "Kd": self.Kd.get(), 
-                              "tgt": self.Target.get(), "en": self.enable_motors.get()})
+            msg = json.dumps({"type": "pid0", 
+                              "Kp": self.Kp0.get(), "Ki": self.Ki0.get(), "Kd": self.Kd0.get(), 
+                              "target": self.target0.get(), "en": self.enable_motors.get()})
+            sendQueue.put(msg)
+            msg = json.dumps({"type": "pid1", 
+                              "Kp": self.Kp1.get(), "Ki": self.Ki1.get(), "Kd": self.Kd1.get(), 
+                              "target": self.target1.get()})
             sendQueue.put(msg)
         except ValueError:
             pass  # Ignore invalid input
@@ -174,14 +215,44 @@ class GUIApp(tk.Tk):
             sendQueue.put(msg)
 
 
-    def send_stop_signal(self):
-        msg = json.dumps({"type": "quit"})
+    def send_typed(self, type: str):
+        msg = json.dumps({"type": type})
         sendQueue.put(msg)
 
 
-    def send_calibrate(self):
-        msg = json.dumps({"type": "calibrate"})
-        sendQueue.put(msg)
+    def show_log(self):
+        fields = log[0].split(',')
+        series = dict()
+        for f in fields:
+            series[f] = np.zeros(len(log)-1)
+
+        for i, line in enumerate(log[1:]):
+            values = line.split(',')
+            for j, f in enumerate(fields):
+                if f == 'pitch':
+                    series[f][i] = float(values[j]) - self.target0.get()
+                else:
+                    series[f][i] = float(values[j])
+
+        if 'time' not in series:
+            print("Log does not contain a 'time' field.")
+            return
+
+        x = series['time']
+        plt.figure("Log Plot")
+        plt.clf()
+        for f in fields:
+            if f == 'time':
+                continue
+            plt.plot(x, series[f], label=f)
+
+        plt.xlabel('time (s)')
+        plt.ylabel('value')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show(block=False)
+        
 #end GUIApp
 
 
@@ -189,7 +260,7 @@ class GUIApp(tk.Tk):
 if __name__ == "__main__":
     root = GUIApp()
 
-    ble_thread = threading.Thread(target=lambda: asyncio.run(main()), daemon=True)
+    ble_thread = BLEThread(daemon=True)
     ble_thread.start()
     
     root.mainloop()

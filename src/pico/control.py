@@ -7,6 +7,14 @@ class PIDController:
         self.err_integral = 0.0
         self.prev_error = 0.0
 
+    def configure(self, params: dict):
+        """ Expecting parameters 'Kp', 'Ki', 'Kd', 'target' """
+        self.Kp = params['Kp']
+        self.Ki = params['Ki']
+        self.Kd = params['Kd']
+        self.target_value = params['target']
+        self.err_integral = 0.0
+        self.prev_error = 0.0
 
     def calcPID(self, input_value, delta_time):
         err = self.target_value - input_value
