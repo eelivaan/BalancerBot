@@ -27,6 +27,7 @@
 #import qwiic_i2c
 import machine
 import time
+import json
 
 # Define the device name and I2C addresses. These are set in the class defintion 
 # as class variables, making them avilable without having to create a class instance.
@@ -995,6 +996,14 @@ class QwiicIcm20948(object):
 		self.mxRaw, self.myRaw, self.mzRaw = 0,0,0
 		self.tmpRaw = 0
 
+		try:
+			with open('calibration.json', 'r') as f:
+				values = json.load(f)
+				self.gxMean, self.gyMean, self.gzMean = values['gx'], values['gy'], values['gz']
+		except Exception:
+			print("Parsing of saved calibration values failed")
+			self.gxMean, self.gyMean, self.gzMean = 0.0, 0.0, 0.0
+
 		return True
 	
 	def get_accel(self):
@@ -1003,7 +1012,9 @@ class QwiicIcm20948(object):
 	
 	def get_gyro(self):
 		""" Angular speed in units of deg/s """
-		return {'x': self.gxRaw / 131.0, 'y': self.gyRaw / 131.0, 'z': self.gzRaw / 131.0}
+		return {'x': self.gxRaw / 131.0 - self.gxMean, 
+		  		'y': self.gyRaw / 131.0 - self.gyMean, 
+				'z': self.gzRaw / 131.0 - self.gzMean}
 	
 	def get_mag(self):
 		""" Magnetic field vector in units of uT """
@@ -1013,3 +1024,24 @@ class QwiicIcm20948(object):
 		""" Chip temperature in degrees Celsius """
 		return ((self.tmpRaw - 21.0) / 333.87) + 21.0
 	
+	def calibrate(self, num_samples=100):
+		print("Calibrating IMU...")
+		# wait for data
+		for t in range(20):
+			if self.dataReady():
+				break
+			time.sleep_ms(100)
+		# measure average value
+		gx,gy,gz = [],[],[]
+		for i in range(num_samples):
+			self.getAgmt()
+			gx.append(self.gxRaw / 131.0)
+			gy.append(self.gyRaw / 131.0)
+			gz.append(self.gzRaw / 131.0)
+			time.sleep_ms(50)
+		self.gxMean = sum(gx) / num_samples
+		self.gyMean = sum(gy) / num_samples
+		self.gzMean = sum(gz) / num_samples
+		with open('calibration.json', 'w') as f:
+			json.dump({'gx': self.gxMean, 'gy': self.gyMean, 'gz': self.gzMean}, f)
+			print("Calibration succesful")

@@ -1,5 +1,4 @@
-from machine import Pin
-from utime import sleep_us, sleep, ticks_ms, ticks_us, ticks_diff
+from utime import sleep_us, ticks_ms, ticks_us, ticks_diff
 from control import PIDController
 from robot import BalancerBot, sign
 import json, math
@@ -20,11 +19,8 @@ bot = BalancerBot(on_config_load)
 
 bot.startBlink()
 
-def reset_control():
-    bot.motors_enabled = True
-    PID.err_integral = 0.0
-
 def ble_msg_callback(msg):
+    global pitch_angle
     print("Received BLE message")
     try:
         params = json.loads(msg)
@@ -43,52 +39,70 @@ def ble_msg_callback(msg):
             bot.load_config()  # Reload config to apply changes
         elif params.get('type') == 'quit':
             bot.quit_flag = True
+        elif params.get('type') == 'calibrate':
+            bot.IMU.calibrate()
+            pitch_angle = None
     except (json.JSONDecodeError, KeyError) as e:
         print("Unhandled BLE message: ", msg)
 
 bot.startBLE(ble_msg_callback)
 
-data_file = None # open("data.csv", "w")
-if data_file:
-    data_file.write("time, ax,ay,az, gx,gy,gz\n")
-    print("Opened data.csv")
-
 bot.startIMU()
+
+def reset_control():
+    bot.motors_enabled = True
+    PID.err_integral = 0.0
 
 prev_status_time = ticks_ms()
 tick_duration = 0
 signal_change_counter = 0
+
 prev_omega = 0.0
+pitch_angle = None
 
 while not bot.quit_flag:
     try:
         t1 = ticks_us()
 
-        bot.updateIMU()
-        
         # timestep in seconds
         dt = bot.config['loop_interval'] / 1000.0
 
-        # measure pitch angle
-        accel = bot.IMU.get_accel()
-        gyro = bot.IMU.get_gyro()
-        
-        # angular velocity around wheel axis
-        omega = math.radians(gyro[bot.config['pitch_axis']])
-        Domega = (omega - prev_omega) / dt
-        prev_omega = omega
-        r = bot.config['IMU_offset']  # 4 cm
+        if bot.updateIMU():
+            # measurements
+            accel = bot.IMU.get_accel()
+            gyro = bot.IMU.get_gyro()
+            
+            # angular velocity around wheel axis
+            #omega = math.radians(gyro[bot.config['pitch_axis']])
+            #Domega = (omega - prev_omega) / dt
+            #prev_omega = omega
+            #r = bot.config['IMU_offset']  # 4 cm
 
-        a = accel[bot.config['horiz_axis']] #* 9.81 + Domega * r
-        b = accel[bot.config['vert_axis']] #* 9.81 + omega**2 * r
-        pitch_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
-        #pitch_angle = math.degrees(math.acos(min(1.0, b))) * sign(_pitch_angle)
+            a = accel[bot.config['horiz_axis']] #* 9.81 + Domega * r
+            b = accel[bot.config['vert_axis']] #* 9.81 + omega**2 * r
+            g_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
 
-        if abs(pitch_angle) > bot.config['limit']:
-            signal = 0.0
+            if pitch_angle == None:
+                pitch_angle = g_angle
+            else:
+                acc_delta_angle = g_angle - pitch_angle
+
+                gyro_delta_angle = gyro[bot.config['pitch_axis']] * dt
+
+                #if sign(acc_delta_angle) != sign(gyro_delta_angle):
+                #    clamped_delta = gyro_delta_angle
+                #else:
+                clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
+                pitch_angle += clamped_delta
+
+            # control signal from pitch angle
+            if abs(pitch_angle) > bot.config['limit']:
+                signal = 0.0
+            else:
+                signal = PID.calcPID(pitch_angle, dt)
+                signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0) # clamp [-1 1]
         else:
-            signal = PID.calcPID(pitch_angle, dt)
-            signal = max(signal, -1.0) if signal < 0 else min(signal, 1.0)
+            signal = 0.0
 
         # track signal saturation
         if bot.motors_enabled and abs(signal) > 0.9:
@@ -108,19 +122,6 @@ while not bot.quit_flag:
             prev_status_time = ticks_ms()
             bot.send_status(pitch_angle, tick_duration)
 
-        # dump measurement into csv file if needed
-        #if bot.motors_enabled and data_file:
-        #    data_file.write("{:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n".format(
-        #        t1 / 1_000_000.0, 
-        #        accel['x'], accel['y'], accel['z'], 
-        #        angular_accel['x'], angular_accel['y'], angular_accel['z']
-        #    ))
-
-        t2 = ticks_us()
-        tick_duration = ticks_diff(t2, t1)
-
-        sleep_us(max(10, bot.config['loop_interval'] * 1000 - tick_duration))
-
         # toggle motors when button is pressed
         if bot.button_pressed():
             if not bot.motors_enabled:
@@ -131,16 +132,18 @@ while not bot.quit_flag:
                 # terminate
                 bot.quit_flag = True
 
+        t2 = ticks_us()
+        tick_duration = ticks_diff(t2, t1)
+
+        sleep_us(max(10, bot.config['loop_interval'] * 1000 - tick_duration))
+
     except (Exception, KeyboardInterrupt) as e:
         print("Exception in main loop: ", e)
         break
 #end while
 
-if data_file:
-    data_file.close()
-    print("Closed data.csv")
-
 bot.motor_input(0) # stop motors
+print("Terminated")
 
 sleep_us(2_000_000)
 

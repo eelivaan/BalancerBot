@@ -4,7 +4,7 @@ from serial import Serial
 from time import sleep
 import json, math
 from collections import deque
-from control import PIDController
+from control import PIDController, sign
 
 code = """
 from robot import BalancerBot
@@ -96,14 +96,14 @@ def main() -> None:
 		sleep(1)
 		print(ser.read_all().decode(errors="ignore"))
 
-		print("Writing code...")
+		print("Sending code...")
 		ser.write(code.encode() + b'\n')
 
 		try:
-			print("Running matplotlib event loop (close plot window to stop)...")
-			prev_omega = 0
+			pitch_angle = 0.0
 			PID = PIDController()
 			PID.Kp = 0.1
+			print("Running matplotlib event loop (close plot window to stop)...")
 			while plt.fignum_exists(fig.number):
 				if ser.in_waiting:
 					msg = ser.read_all().decode(errors="ignore")
@@ -132,20 +132,28 @@ def main() -> None:
 							axes[1].relim()
 							axes[1].autoscale_view()
 
-							omega = math.radians(gyro['y'])
-							Domega = (omega - prev_omega) / 0.1
-							prev_omega = omega
-							r = 0.04  # 4 cm
-							a = accel['z'] * 9.81 + Domega * r
-							b = accel['x'] * 9.81 + omega**2 * r
-							pitch_angle = math.degrees(math.atan(a / b))
+							dt = 0.1
+							a = accel['z']
+							b = accel['x']
+							g_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
+							if pitch_angle == 0:
+								pitch_angle = g_angle
+							else:
+								acc_delta_angle = g_angle - pitch_angle
+
+								gyro_delta_angle = gyro['y'] * dt
+
+								#if sign(acc_delta_angle) != sign(gyro_delta_angle):
+								#	clamped_delta = gyro_delta_angle
+								#else:
+								clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
+								pitch_angle += clamped_delta
 							pitch.append(pitch_angle)
 
-							#raw_pitch_angle = math.degrees(math.atan(accel['z'] / accel['x']))
-							raw_pitch_angle = math.degrees(math.acos(min(1.0, accel['x'])))
-							pitch_raw.append(raw_pitch_angle)
+							#raw_pitch_angle = math.degrees(math.acos(min(1.0, accel['x'])))
+							pitch_raw.append(g_angle)
 
-							pidOut.append(PID.calcPID(raw_pitch_angle, 0.1) * 10.0)
+							pidOut.append(PID.calcPID(pitch_angle, dt) * 1.0)
 
 							plotPitch.set_data(np.array(at), np.array(pitch))
 							plotPitchRaw.set_data(np.array(at), np.array(pitch_raw))

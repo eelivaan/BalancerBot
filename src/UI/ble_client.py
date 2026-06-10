@@ -109,6 +109,9 @@ class GUIApp(tk.Tk):
         self.stop_btn = ttk.Button(self, text="Stop program", command=self.send_stop_signal)
         self.stop_btn.grid(pady=10, padx=5, row=6, column=1)
 
+        self.calibrate_btn = ttk.Button(self, text="Calibrate", command=self.send_calibrate)
+        self.calibrate_btn.grid(pady=10, padx=5, row=6, column=2)
+
         self.ok_label = ttk.Label(self, text="ok", font=("Consolas", 14), foreground="#0b0c0b", background="#a3f9a3")
         self.ok_label.grid(pady=10, padx=5, row=7, column=0)
         self.ok_label.grid_remove()  # Hide initially
@@ -173,6 +176,11 @@ class GUIApp(tk.Tk):
 
     def send_stop_signal(self):
         msg = json.dumps({"type": "quit"})
+        sendQueue.put(msg)
+
+
+    def send_calibrate(self):
+        msg = json.dumps({"type": "calibrate"})
         sendQueue.put(msg)
 #end GUIApp
 
