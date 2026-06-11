@@ -25,27 +25,31 @@ display_log_flag = threading.Event()
 
 class BLEThread(threading.Thread):
     receiving_log = False
+    msg_buffer = bytearray()
 
     # called when data is received from Pico
     def on_notify(self, sender, data: bytearray):
-        message = data.decode("utf-8", errors="replace").strip()
-        if message == "ok":
-            ok_flag.set()
-        elif message == "log_output":
-            log.clear()
-            self.receiving_log = True
-            msgQueue.put("wait...")
-        elif message == "log_end":
-            self.receiving_log = False
-            display_log_flag.set()
-        elif self.receiving_log:
-            log.append(message)
-        else:
-            try:
-                js = json.loads(message)  # Validate JSON
-                msgQueue.put(js)
-            except json.JSONDecodeError:
-                print(f"Pico: {message}")
+        self.msg_buffer.extend(data)
+        if b'\0' in self.msg_buffer:
+            (msg, self.msg_buffer) = self.msg_buffer.split(b'\0', 1)  # Split at null terminator
+            message = msg.decode("utf-8", errors="replace").strip()
+            if message == "ok":
+                ok_flag.set()
+            elif message == "log_output":
+                log.clear()
+                self.receiving_log = True
+                msgQueue.put("wait...")
+            elif message == "log_end":
+                self.receiving_log = False
+                display_log_flag.set()
+            elif self.receiving_log:
+                log.append(message)
+            else:
+                try:
+                    js = json.loads(message)  # Validate JSON
+                    msgQueue.put(js)
+                except json.JSONDecodeError:
+                    print(f"Pico: {message}")
     #end on_notify
 
     async def main(self):

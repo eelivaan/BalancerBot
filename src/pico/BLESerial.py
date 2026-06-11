@@ -29,15 +29,13 @@ class BLESerial:
 
     def __init__(self, msg_callback=None, name="PicoBLE") -> None:
         self.ble = bluetooth.BLE()
-        # reset BLE radio?
-        self.ble.active(False)
-        time.sleep_ms(200)
         self.connections = set()
         self.tx_handle = None
         self.rx_handle = None
         self.msg_callback = msg_callback
         self.msg_buffer = bytearray()
         self.name = name
+        self.echo = False
 
         self.ble.irq(self.ble_callback)
         self.ble.active(True)
@@ -50,8 +48,8 @@ class BLESerial:
             print("Scanning for devices...")
             self.ble.gap_scan(5000)
 
-    def __del__(self):
-        self.deactivate()
+    #def __del__(self):
+    #    self.deactivate()
 
     def deactivate(self):
         self.ble.active(False)
@@ -71,9 +69,11 @@ class BLESerial:
 
     def send(self, data):
         if isinstance(data, str):
-            data = data.encode("utf-8")
+            data = data.encode('utf-8', 'replace') + b'\0'  # Null-terminate string data
         for conn_handle in self.connections:
-            self.ble.gatts_notify(conn_handle, self.tx_handle, data) # type: ignore
+            for i in range(0, len(data), 20):  # BLE typically allows up to 20 bytes per notification
+                chunk = data[i:i+20]
+                self.ble.gatts_notify(conn_handle, self.tx_handle, chunk) # type: ignore
 
 
     def ble_callback(self, event, data):
@@ -94,14 +94,15 @@ class BLESerial:
             conn_handle, value_handle = data
             if value_handle == self.rx_handle:
                 incoming = self.ble.gatts_read(self.rx_handle) # type: ignore
+                if self.echo:
+                    # Echo back received bytes to emulate a serial terminal.
+                    self.send(incoming)
                 self.msg_buffer.extend(incoming)
                 if b'\0' in self.msg_buffer:
                     (msg, self.msg_buffer) = self.msg_buffer.split(b'\0', 1)  # Split at null terminator
                     if self.msg_callback:
                         self.msg_callback(msg.decode("utf-8", "replace"))
-                        self.send("ok")
-                # Echo back received bytes to emulate a serial terminal.
-                #self.send(incoming)
+                    self.send("ok")
 
         elif event == BLESerial._IRQ_SCAN_RESULT:
             (addr_type, addr, adv_type, rssi, adv_data) = data
@@ -118,12 +119,13 @@ if __name__ == "__main__":
     import json
     # test connectivity
     ble = BLESerial()
+    ble.echo = True
     ledpin = Pin("LED", Pin.OUT)
     while True:
         try:
             t1 = ticks_us()
             ledpin.toggle()
-            ble.send(json.dumps({'a:': 1.0, 'b': 2.0, 'c': 3.0}))
+            ble.send(json.dumps({'a': 1.0, 'b': 2.0, 'c': 3.0}))
             t2 = ticks_us()
             print(ticks_diff(t2,t1) / 1000.0, 'ms')
             sleep_ms(500)

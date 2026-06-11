@@ -1,7 +1,9 @@
-from utime import sleep_us, ticks_ms, ticks_us, ticks_diff
+from utime import sleep, sleep_us, ticks_ms, ticks_us, ticks_diff
 from control import PIDController
 from robot import BalancerBot, sign
 import json, math
+
+sleep(1.5)
 
 # controller for balancing
 pitch_control = PIDController()
@@ -28,6 +30,7 @@ def ble_msg_callback(msg):
         # update PID params
         if params.get('type') == 'pid0':
             pitch_control.configure(params)
+            bot.config['pid0']['target'] = params['target']
             bot.motors_enabled = params['en']
         elif params.get('type') == 'pid1':
             target_control.configure(params)
@@ -52,10 +55,11 @@ bot.startBLE(ble_msg_callback)
 bot.startIMU()
 
 def reset_control():
-    global motor_traversal
+    global motor_traversal, motor_signal
     bot.motors_enabled = True
     pitch_control.err_integral = 0.0
     motor_traversal = 0.0
+    motor_signal = 0.0
 
 prev_status_time = ticks_ms()
 tick_duration = 0
@@ -63,9 +67,11 @@ max_tick_duration = 0
 signal_change_counter = 0
 log_pending = False
 
-prev_omega = 0.0
+#prev_omega = 0.0
 pitch_angle = None
+pitch_history = []
 motor_traversal = 0.0
+motor_signal = 0.0
 
 while not bot.quit_flag:
     try:
@@ -93,10 +99,17 @@ while not bot.quit_flag:
             if pitch_angle == None:
                 pitch_angle = g_angle
             else:
-                acc_delta_angle = g_angle - pitch_angle
-                gyro_delta_angle = gyro[bot.config['pitch_axis']] * dt
-                clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
-                pitch_angle += clamped_delta
+                #acc_delta_angle = g_angle - pitch_angle
+                #gyro_delta_angle = gyro[bot.config['pitch_axis']] * dt
+                #clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
+                #pitch_angle += clamped_delta
+                if bot.config['pitch_filter'] > 1:
+                    pitch_history.append(g_angle)
+                    while len(pitch_history) > bot.config['pitch_filter']:
+                        pitch_history.pop(0)
+                    pitch_angle = sum(pitch_history) / len(pitch_history)
+                else:
+                    pitch_angle = g_angle
 
                 # enable motors when first lifted to balance position
                 if not bot.motors_enabled and abs(pitch_angle - pitch_offset) < 1.0:
@@ -105,6 +118,7 @@ while not bot.quit_flag:
             # control signal from pitch angle
             if abs(pitch_angle) > bot.config['pitch_limit']:
                 signal = 0.0
+                bot.motors_enabled = False
             else:
                 pitch_control.target_value = pitch_offset + target_control.calcPID(motor_traversal, dt)
                 signal = pitch_control.calcPID(pitch_angle, dt)
@@ -113,7 +127,7 @@ while not bot.quit_flag:
             signal = 0.0
 
         # track signal saturation
-        if bot.motors_enabled and abs(signal) > 0.9:
+        if bot.motors_enabled and abs(motor_signal) > 0.9:
             signal_change_counter += bot.config['loop_interval'] # ms
             if signal_change_counter > bot.config['signal_cutoff_ms']:
                 signal_change_counter = 0
@@ -123,8 +137,11 @@ while not bot.quit_flag:
         else:
             signal_change_counter = 0
 
-        bot.motor_input(signal)
-        motor_traversal -= signal * dt  # estimate integral of motor rotation
+        if bot.motors_enabled:
+            motor_signal += signal
+            motor_signal = sign(motor_signal) * min(1.0, abs(motor_signal))
+        bot.motor_input(motor_signal)
+        motor_traversal -= motor_signal * dt  # estimate integral of motor rotation
 
         # send status info to laptop periodically
         if bot.config['status_send_period'] > 0 and ticks_diff(ticks_ms(), prev_status_time) > bot.config['status_send_period']:
@@ -163,6 +180,6 @@ while not bot.quit_flag:
 bot.motor_input(0) # stop motors
 print("Terminated")
 
-sleep_us(2_000_000)
+sleep(2.0)
 
 bot.off()

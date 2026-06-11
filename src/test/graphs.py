@@ -8,15 +8,17 @@ from control import PIDController, sign
 
 code = """
 from robot import BalancerBot
-from time import sleep_ms
+from time import sleep_ms, ticks_ms, ticks_diff
 import json
 bot = BalancerBot()
 bot.startIMU()
 while 1:
+	t1 = ticks_ms()
 	bot.updateIMU()
 	print(json.dumps(bot.measure_accel_with_time()))
 	print(json.dumps(bot.measure_gyro_with_time()))
-	sleep_ms(100)
+	t2 = ticks_ms()
+	sleep_ms(max(0, 50 - ticks_diff(t2, t1)))
 """
 
 class Plotter:
@@ -38,7 +40,7 @@ class Plotter:
 
 
 def main() -> None:
-	history = 400
+	history = 500
 	at = deque(maxlen=history)
 	ax = deque(maxlen=history)
 	ay = deque(maxlen=history)
@@ -100,7 +102,8 @@ def main() -> None:
 		ser.write(code.encode() + b'\n')
 
 		try:
-			pitch_angle = 0.0
+			pitch_angle = None
+			prev_omega = 0.0
 			PID = PIDController()
 			PID.Kp = 0.1
 			print("Running matplotlib event loop (close plot window to stop)...")
@@ -132,25 +135,27 @@ def main() -> None:
 							axes[1].relim()
 							axes[1].autoscale_view()
 
-							dt = 0.1
+							dt = 0.05
+							omega = math.radians(gyro['y'])
+							Domega = (omega - prev_omega) / dt
+							prev_omega = omega
+							r = 0.04
+
 							a = accel['z']
 							b = accel['x']
 							g_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
-							if pitch_angle == 0:
-								pitch_angle = g_angle
-							else:
-								acc_delta_angle = g_angle - pitch_angle
-
-								gyro_delta_angle = gyro['y'] * dt
-
-								#if sign(acc_delta_angle) != sign(gyro_delta_angle):
-								#	clamped_delta = gyro_delta_angle
-								#else:
-								clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
-								pitch_angle += clamped_delta
+							#if pitch_angle == None:
+							#	pitch_angle = g_angle
+							#else:
+							#	acc_delta_angle = g_angle - pitch_angle
+							#	gyro_delta_angle = gyro['y'] * dt
+							#	clamped_delta = sign(acc_delta_angle) * min(abs(acc_delta_angle), abs(gyro_delta_angle))
+							#	pitch_angle += clamped_delta
+							a = accel['z'] * 9.81 + Domega * r
+							b = accel['x'] * 9.81
+							pitch_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
 							pitch.append(pitch_angle)
 
-							#raw_pitch_angle = math.degrees(math.acos(min(1.0, accel['x'])))
 							pitch_raw.append(g_angle)
 
 							pidOut.append(PID.calcPID(pitch_angle, dt) * 1.0)
@@ -160,6 +165,8 @@ def main() -> None:
 							plotPID.set_data(np.array(at), np.array(pidOut))
 							axes[2].relim()
 							axes[2].autoscale_view()
+						else:
+							print(msg)
 					except StopIteration:
 						pass
 				plt.pause(0.03)
