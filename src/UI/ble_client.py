@@ -97,7 +97,7 @@ class GUIApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Control Panel")
-        self.geometry("600x480")
+        self.geometry("600x500")
 
         font = ("Consolas", 11)
         style = ttk.Style()
@@ -162,12 +162,13 @@ class GUIApp(tk.Tk):
                     text = f"Accel: {data['a']['x']:.3f}  {data['a']['y']:.3f}  {data['a']['z']:.3f}\n"
                     text += f"Gyro: {data['g']['x']:.3f}  {data['g']['y']:.3f}  {data['g']['z']:.3f}\n"
                     text += f"Magnetometer: {data['m']['x']:.0f}  {data['m']['y']:.0f}  {data['m']['z']:.0f}\n"
-                    text += f"Temp: {data['t']:.2f}°C\n"
+                    text += f"Temperature: {data['t']:.2f}°C\n"
                     text += f"Filtered Pitch: {data['s']:.3f}°\n"
                     text += f"Pitch Target: {data['st']:.3f}°\n"
                     text += f"Heading: {data['h']:.1f}°\n"
+                    text += f"Motor Traversal: {data['mt']:.3f}\n"
                     text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
-                    text += f"Battery: {data['b']}%"
+                    text += f"Battery: {data['b']:.2f} V"
                     self.accel_label.config(text=text)
             if ok_flag.is_set():
                 self.ok_label.grid()  # Show "ok" label

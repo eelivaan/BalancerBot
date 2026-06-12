@@ -45,7 +45,7 @@ def ble_msg_callback(msg):
             bot.IMU.calibrate()
             pitch_angle = None
         elif params.get('type') == 'log':
-            bot.start_logging(['time', 'pitch', 'control', 'motor_position'], duration=5)
+            bot.start_logging(['time', 'pitch', 'gyro', 'control', 'motor_position'], duration=5)
             log_pending = True
     except (json.JSONDecodeError, KeyError) as e:
         print("Unhandled BLE message: ", msg)
@@ -81,20 +81,20 @@ while not bot.quit_flag:
         dt = bot.config['loop_interval'] / 1000.0
         pitch_offset = bot.config['pid0']['target']
 
-        if bot.updateIMU():
-            # measurements
-            accel = bot.IMU.get_accel()
-            gyro = bot.IMU.get_gyro()
-            
-            # angular velocity around wheel axis
-            #omega = math.radians(gyro[bot.config['pitch_axis']])
-            #Domega = (omega - prev_omega) / dt
-            #prev_omega = omega
-            #r = bot.config['IMU_offset']  # 4 cm
+        bot.updateIMU()
 
-            a = accel[bot.config['horiz_axis']] #* 9.81 + Domega * r
-            b = accel[bot.config['vert_axis']] #* 9.81 + omega**2 * r
-            g_angle = math.degrees(math.atan(a / b)) if b != 0 else 0
+        # measurements
+        accel = bot.IMU.get_accel()
+        gyro = bot.IMU.get_gyro()
+
+        a = accel[bot.config['horiz_axis']]
+        b = accel[bot.config['vert_axis']]
+        pitch_deriv = gyro[bot.config['pitch_axis']]
+
+        if b == 0:  # check we have actual measurements ready
+            signal = 0.0
+        else:
+            g_angle = math.degrees(math.atan(a / b))
 
             if pitch_angle == None:
                 pitch_angle = g_angle
@@ -116,15 +116,13 @@ while not bot.quit_flag:
                     reset_control()
 
             # control signal from pitch angle
-            if abs(pitch_angle) > bot.config['pitch_limit']:
+            if abs(g_angle) > bot.config['pitch_limit']:
                 signal = 0.0
                 bot.motors_enabled = False
             else:
                 pitch_control.target_value = pitch_offset + target_control.calcPID(motor_traversal, dt)
-                signal = pitch_control.calcPID(pitch_angle, dt)
+                signal = pitch_control.calcPID(pitch_angle, dt, -pitch_deriv if bot.config['use_gyro_as_D'] else None)
                 signal = sign(signal) * math.pow(min(1.0, abs(signal)), bot.config['signal_power'])
-        else:
-            signal = 0.0
 
         # track signal saturation
         if bot.motors_enabled and abs(motor_signal) > 0.9:
@@ -132,6 +130,7 @@ while not bot.quit_flag:
             if signal_change_counter > bot.config['signal_cutoff_ms']:
                 signal_change_counter = 0
                 bot.motors_enabled = False
+                motor_signal = 0.0
                 # retry enabling motors after short delay
                 #Timer(-1).init(mode=Timer.ONE_SHOT, period=2000, callback=lambda t: reset_control())
         else:
@@ -145,9 +144,10 @@ while not bot.quit_flag:
 
         # send status info to laptop periodically
         if bot.config['status_send_period'] > 0 and ticks_diff(ticks_ms(), prev_status_time) > bot.config['status_send_period']:
-            bot.send_status(pitch_angle, max_tick_duration, pitch_control.target_value)
-            max_tick_duration = 0
             prev_status_time = ticks_ms()
+            bot.send_status({'s': pitch_angle, 'st': pitch_control.target_value,
+                             'dt': max_tick_duration, 'mt': motor_traversal})
+            max_tick_duration = 0
 
         # quit when button is pressed
         if bot.button_pressed():
@@ -163,7 +163,7 @@ while not bot.quit_flag:
 
         # log if needed
         if bot.logging():
-            bot.log([bot.time_ms() / 1000.0, pitch_angle, signal, motor_traversal])
+            bot.log([bot.time_ms() / 1000.0, pitch_angle, pitch_deriv, signal, motor_traversal])
         elif log_pending:
             log_pending = False
             bot.ble.send('log_output') # type: ignore

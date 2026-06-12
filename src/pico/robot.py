@@ -53,12 +53,13 @@ class BalancerBot:
         self.blink_timer.init(period=period, callback=lambda t: self.led_builtin.toggle())
 
 
-    def read_battery_percentage(self):
+    def read_battery_voltage(self):
         raw = self.bat_adc.read_u16()
-        if raw < 10:
-            return -1
-        voltage = raw / 65535.0 * 3.3 * 2
-        return round((voltage - 3.40) / (4.00 - 3.40) * 100)
+        return raw / 65535.0 * 3.3 * 2
+
+
+    def read_battery_percentage(self):
+        return round((self.read_battery_voltage() - 3.40) / (4.00 - 3.40) * 100)
     
 
     def wait_button_press(self):
@@ -92,7 +93,7 @@ class BalancerBot:
             self.IMU_start_time = time.ticks_ms()
             self.IMU_last_update_time = -1
         else:
-            print("IMU initialization unsuccessful")
+            print("IMU initialization failed")
             self.quit_flag = True
 
     
@@ -139,11 +140,12 @@ class BalancerBot:
             self.servoR_PWM.duty_ns(0)
 
 
-    def send_status(self, pitch, dt, pitch_target):
+    def send_status(self, custom_data):
         if self.ble and self.ble.is_connected():
-            bat = self.read_battery_percentage()
-            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(), 't': self.IMU.get_temperature(), 
-                    's': pitch, 'st': pitch_target, 'h': self.heading, 'dt': dt, 'b': bat}
+            bat = self.read_battery_voltage()
+            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(), 
+                    't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat}
+            data.update(custom_data)  # append custom data
             self.ble.send(json.dumps(data))
 
 
