@@ -1,18 +1,24 @@
 
+def limit(value, max_offset, center=0.0):
+    return min(max(value, center-max_offset), center+max_offset)
+
+
 class PIDController:
 
     def __init__(self) -> None:
         self.Kp, self.Kd, self.Ki = 0.0, 0.0, 0.0
         self.target_value = 0.0
+        self.max_output = 1.0
         self.err_integral = 0.0
         self.prev_error = 0.0
 
     def configure(self, params: dict):
-        """ Expecting parameters 'Kp', 'Ki', 'Kd', 'target' """
+        """ Expecting parameters 'Kp', 'Ki', 'Kd', 'target', 'max' """
         self.Kp = params['Kp']
         self.Ki = params['Ki']
         self.Kd = params['Kd']
         self.target_value = params['target']
+        self.max_output = params['max']
         self.err_integral = 0.0
 
     def calcPID(self, input_value, delta_time, override_derivative=None):
@@ -25,4 +31,5 @@ class PIDController:
             D = self.Kd * (err - self.prev_error) / delta_time
         self.prev_error = err
         self.err_integral += err * delta_time
-        return P + I + D
+        return limit(P + I + D, self.max_output)
+    

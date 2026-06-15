@@ -6,6 +6,32 @@ import json, math, time
 def sign(x):
     return 0 if x == 0 else (1 if x > 0 else -1)
 
+class SlidingAverage:
+    def __init__(self, length: int) -> None:
+        self.set(0.0, length)
+
+    def set(self, value: float, length=None):
+        if length is None:
+            length = len(self.samples)
+        self.samples = [value for i in range(length)]
+        self.sample_index = 0
+        self.average = value
+
+    def add(self, value: float, length=None):
+        if length is None:
+            length = len(self.samples)
+        elif length != len(self.samples):
+            self.set(0.0, length)
+        self.average -= self.samples[self.sample_index] * (1.0 / length)
+        self.samples[self.sample_index] = value
+        self.average += value * (1.0 / length)
+        self.sample_index = (self.sample_index + 1) % length
+
+    def get(self) -> float:
+        return self.average
+#end SlidingAverage
+
+
 class BalancerBot:
     def __init__(self, config_load_callback=None):
         self.led_builtin = Pin("LED", Pin.OUT)
@@ -33,6 +59,7 @@ class BalancerBot:
         self.ble = None
 
         self.heading = 0.0
+        self.speed = SlidingAverage(self.config['speed_filter'])
         self.motors_enabled = False
         self.quit_flag = False
         self.logfile = None
@@ -129,15 +156,18 @@ class BalancerBot:
         self.ble = BLESerial(ble_msg_callback)
     
     
-    def motor_input(self, signal):
+    def motor_input(self, left_signal, right_signal):
         # motor control
         if self.motors_enabled:
-            pulse = sign(signal) * (self.config['motor_PWM_min'] + abs(signal) * 100)
+            pulse = sign(left_signal) * (self.config['motor_PWM_min'] + abs(left_signal) * 100)
             self.servoL_PWM.duty_ns(int((150 + pulse) * 10000))
+            pulse = sign(right_signal) * (self.config['motor_PWM_min'] + abs(right_signal) * 100)
             self.servoR_PWM.duty_ns(int((150 - pulse) * 10000))
+            self.speed.add((left_signal + right_signal) / 2.0, self.config['speed_filter'])
         else:
             self.servoL_PWM.duty_ns(0)
             self.servoR_PWM.duty_ns(0)
+            self.speed.set(0.0)
 
 
     def send_status(self, custom_data):
@@ -158,7 +188,7 @@ class BalancerBot:
 
     def off(self):
         self.quit_flag = True
-        self.motor_input(0)
+        self.motor_input(0,0)
 
         if self.logging():
             self.stop_logging()
@@ -203,3 +233,4 @@ class BalancerBot:
             return True
         else:
             return False
+        

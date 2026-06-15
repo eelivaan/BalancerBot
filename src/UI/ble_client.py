@@ -97,7 +97,7 @@ class GUIApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Control Panel")
-        self.geometry("600x500")
+        self.geometry("600x550")
 
         font = ("Consolas", 11)
         style = ttk.Style()
@@ -111,10 +111,14 @@ class GUIApp(tk.Tk):
         self.motors_checkbox.grid(pady=5, padx=5, row=1, column=0)
         self.motors_checkbox.configure(command=self.send_pid)  # Call send_pid when toggled
 
-        for i, t in enumerate(["Kp", "Ki", "Kd", "target"]):
+        # load initial PID values from config.json
+        with open("config.json", "r") as f:
+            config = json.load(f)
+
+        for i, t in enumerate(["Kp", "Ki", "Kd", "target", "max"]):
             ttk.Label(self, text=f"{t}:", font=font).grid(pady=5, padx=5, row=2+i, column=0)
-            for c in range(2):
-                var = tk.DoubleVar(value=0.0)
+            for c in range(3):
+                var = tk.DoubleVar(value=config[f'pid{c}'].get(t))
                 setattr(self, f"{t}{c}", var)
                 spinBox = ttk.Spinbox(self, from_=0.0, to=10.0, increment=0.001, textvariable=var, width=7)
                 setattr(self, f"{t}{c}Edit", spinBox)
@@ -122,30 +126,20 @@ class GUIApp(tk.Tk):
                 spinBox.configure(command=self.send_pid)  # Call send_pid on value change
                 spinBox.bind("<Return>", lambda event: self.send_pid())  # Call send_pid on enter key
 
-        # load initial PID values from config.json
-        with open("config.json", "r") as f:
-            config = json.load(f)
-            for c in range(2):
-                pid = config[f'pid{c}']
-                getattr(self, f"Kp{c}").set(pid.get("Kp", 0.0))
-                getattr(self, f"Ki{c}").set(pid.get("Ki", 0.0))
-                getattr(self, f"Kd{c}").set(pid.get("Kd", 0.0))
-                getattr(self, f"target{c}").set(pid.get("target", 0.0))
-
         self.download_btn = ttk.Button(self, text="Download config.json", command=self.download_config)
-        self.download_btn.grid(pady=10, padx=5, row=6, column=0)
+        self.download_btn.grid(pady=10, padx=5, row=7, column=0)
 
         self.stop_btn = ttk.Button(self, text="Stop program", command=lambda: self.send_typed('quit'))
-        self.stop_btn.grid(pady=10, padx=5, row=6, column=1)
+        self.stop_btn.grid(pady=10, padx=5, row=7, column=1)
 
         self.calibrate_btn = ttk.Button(self, text="Calibrate", command=lambda: self.send_typed('calibrate'))
-        self.calibrate_btn.grid(pady=10, padx=5, row=6, column=2)
+        self.calibrate_btn.grid(pady=10, padx=5, row=7, column=2)
 
         self.log_btn = ttk.Button(self, text="Capture", command=lambda: self.send_typed('log'))
-        self.log_btn.grid(pady=10, padx=5, row=6, column=3)
+        self.log_btn.grid(pady=10, padx=5, row=7, column=3)
 
         self.ok_label = ttk.Label(self, text="ok", font=("Consolas", 14), foreground="#0b0c0b", background="#a3f9a3")
-        self.ok_label.grid(pady=10, padx=5, row=7, column=0)
+        self.ok_label.grid(pady=10, padx=5, row=8, column=0)
         self.ok_label.grid_remove()  # Hide initially
 
         self.tick()
@@ -166,7 +160,7 @@ class GUIApp(tk.Tk):
                     text += f"Filtered Pitch: {data['s']:.3f}°\n"
                     text += f"Pitch Target: {data['st']:.3f}°\n"
                     text += f"Heading: {data['h']:.1f}°\n"
-                    text += f"Motor Traversal: {data['mt']:.3f}\n"
+                    text += f"Motor Speed: {data['mt']:.3f}\n"
                     text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
                     text += f"Battery: {data['b']:.2f} V"
                     self.accel_label.config(text=text)
@@ -188,12 +182,13 @@ class GUIApp(tk.Tk):
         stop_flag.set()
         with open("config.json", "r") as f:
             config = json.load(f)
-            for c in range(2):
+            for c in range(3):
                 pid = config[f'pid{c}']
                 pid['Kp'] = getattr(self, f'Kp{c}').get()
                 pid['Ki'] = getattr(self, f'Ki{c}').get()
                 pid['Kd'] = getattr(self, f'Kd{c}').get()
                 pid['target'] = getattr(self, f'target{c}').get()
+                pid['max'] = getattr(self, f'max{c}').get()
             with open("config.json", "w") as f:
                 json.dump(config, f, separators=(',\n', ': ')) # type: ignore
                 print("config.json updated")
@@ -203,12 +198,16 @@ class GUIApp(tk.Tk):
         try:
             msg = json.dumps({"type": "pid0", 
                               "Kp": self.Kp0.get(), "Ki": self.Ki0.get(), "Kd": self.Kd0.get(), 
-                              "target": self.target0.get(), "en": self.enable_motors.get()})
+                              "target": self.target0.get(), "max": self.max0.get(), "en": self.enable_motors.get()})
             sendQueue.put(msg)
-            msg = json.dumps({"type": "pid1", 
-                              "Kp": self.Kp1.get(), "Ki": self.Ki1.get(), "Kd": self.Kd1.get(), 
-                              "target": self.target1.get()})
-            sendQueue.put(msg)
+            for c in range(1,3):
+                msg = json.dumps({"type": f"pid{c}", 
+                                  "Kp": getattr(self, f'Kp{c}').get(), 
+                                  "Ki": getattr(self, f'Ki{c}').get(), 
+                                  "Kd": getattr(self, f'Kd{c}').get(), 
+                                  "target": getattr(self, f'target{c}').get(), 
+                                  "max": getattr(self, f'max{c}').get()})
+                sendQueue.put(msg)
         except ValueError:
             pass  # Ignore invalid input
 

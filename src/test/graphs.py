@@ -4,7 +4,6 @@ from serial import Serial
 from time import sleep
 import json, math
 from collections import deque
-from control import PIDController, sign
 
 code = """
 from robot import BalancerBot
@@ -53,7 +52,6 @@ def main() -> None:
 
 	pitch = deque(maxlen=history)
 	pitch_raw = deque(maxlen=history)
-	pidOut = deque(maxlen=history)
 
 	fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
@@ -77,7 +75,6 @@ def main() -> None:
 
 	plotPitchRaw, = axes[2].plot([], [], label="raw pitch")
 	plotPitch, = axes[2].plot([], [], label="pitch")
-	plotPID, = axes[2].plot([], [], label="PID output")
 	axes[2].set_title("Pitch")
 	axes[2].set_xlabel("Time")
 	axes[2].set_ylabel("Value")
@@ -104,8 +101,6 @@ def main() -> None:
 		try:
 			pitch_angle = None
 			prev_omega = 0.0
-			PID = PIDController()
-			PID.Kp = 0.1
 			print("Running matplotlib event loop (close plot window to stop)...")
 			while plt.fignum_exists(fig.number):
 				if ser.in_waiting:
@@ -158,11 +153,8 @@ def main() -> None:
 
 							pitch_raw.append(g_angle)
 
-							pidOut.append(PID.calcPID(pitch_angle, dt) * 1.0)
-
 							plotPitch.set_data(np.array(at), np.array(pitch))
 							plotPitchRaw.set_data(np.array(at), np.array(pitch_raw))
-							plotPID.set_data(np.array(at), np.array(pidOut))
 							axes[2].relim()
 							axes[2].autoscale_view()
 						else:
