@@ -19,10 +19,6 @@ def on_config_load(config):
 
 bot = BalancerBot(on_config_load)
 
-# wait button press to start execution
-#print("Press button to start...")
-#bot.wait_button_press()
-
 bot.startBlink()
 
 def ble_msg_callback(msg):
@@ -90,7 +86,7 @@ while not bot.quit_flag:
 
         bot.updateIMU()
 
-        # measurements
+        # sensor measurements
         accel = bot.IMU.get_accel()
         gyro = bot.IMU.get_gyro()
 
@@ -113,8 +109,8 @@ while not bot.quit_flag:
             if abs(g_angle) > bot.config['pitch_limit']:
                 bot.motors_enabled = False
             else:
-                pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
-                #pitch_control.target_value = pitch_offset - travel_control.calcPID(motor_traversal, dt)
+                #pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
+                pitch_control.target_value = pitch_offset - travel_control.calcPID(motor_traversal, dt)
                 signal_pitch = pitch_control.calcPID(pitch_angle.get(), dt, -pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
                 signal_yaw = heading_control.calcPID(bot.heading, dt)
 
