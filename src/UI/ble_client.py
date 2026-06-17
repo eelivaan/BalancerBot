@@ -12,7 +12,7 @@ UART_RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"  # We write here
 
 
 class BLEThread(threading.Thread):
-    def __init__(self):
+    def __init__(self, allow_string_messages=False):
         super().__init__(daemon=True)
         self.receiving_log = False
         self.msg_buffer = bytearray()
@@ -23,6 +23,7 @@ class BLEThread(threading.Thread):
         self.ok_flag = threading.Event()
         self.log = []  # Store log data received from Pico
         self.display_log_flag = threading.Event()
+        self.allow_str_messages = allow_string_messages
 
     def is_connected(self):
         return self.connected_flag.is_set()
@@ -70,6 +71,8 @@ class BLEThread(threading.Thread):
                 self.display_log_flag.set()
             elif self.receiving_log:
                 self.log.append(message)
+            elif self.allow_str_messages:
+                self.msgQueue.put(message)
             else:
                 try:
                     js = json.loads(message)  # Validate JSON

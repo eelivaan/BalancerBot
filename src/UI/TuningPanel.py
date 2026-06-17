@@ -90,6 +90,10 @@ class GUIApp(tk.Tk):
     def destroy(self):
         super().destroy()
         ble_thread.stop()
+        self.update_config()
+ 
+
+    def update_config(self):
         with open("config.json", "r") as f:
             config = json.load(f)
             for c in range(3):
@@ -100,7 +104,7 @@ class GUIApp(tk.Tk):
                 pid['target'] = getattr(self, f'target{c}').get()
                 pid['max'] = getattr(self, f'max{c}').get()
             with open("config.json", "w") as f:
-                json.dump(config, f, separators=(',\n', ': ')) # type: ignore
+                json.dump(config, f, indent=4) # type: ignore
                 print("config.json updated")
     
 
@@ -123,6 +127,7 @@ class GUIApp(tk.Tk):
 
 
     def download_config(self):
+        self.update_config()
         with open("config.json", "r") as f:
             content = f.read()
             msg = json.dumps({"type": "config", "content": content})

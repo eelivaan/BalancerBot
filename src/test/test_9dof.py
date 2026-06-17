@@ -12,7 +12,7 @@ print("I2C0 Scan result: ", end='')
 for addr in i2c0.scan():
     print(hex(addr))
 
-i2c1 = I2C(1, scl=Pin("GP27"), sda=Pin("GP26"), freq=400000)
+i2c1 = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
 print("I2C1 Scan result: ", end='')
 for addr in i2c1.scan():
     print(hex(addr))
@@ -21,7 +21,7 @@ ToF_sensor = VL53L4CX(i2c1)
 
 # OPTIONAL: can set non-default values
 ToF_sensor.distance_mode = 2
-ToF_sensor.timing_budget = 500
+ToF_sensor.timing_budget = 100
 
 print("VL53L4CX Simple Test.")
 print("--------------------")
@@ -65,14 +65,14 @@ while run:
             ToF_sensor.clear_interrupt()
         else:
             print("Waiting for VL53L4CX data")
-            time.sleep(0.3)
+            #time.sleep(0.3)
 
         if IMU.dataReady():
             IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
             ax = IMU.axRaw / 16384.0
             ay = IMU.ayRaw / 16384.0
             az = IMU.azRaw / 16384.0
-            pitch = math.degrees( math.atan(ax / az) )
+            pitch = math.degrees( math.atan(az / ay) ) if az != 0 else 0
             mx = IMU.mxRaw
             my = IMU.myRaw
             mz = IMU.mzRaw

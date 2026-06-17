@@ -59,7 +59,7 @@ bot.startIMU()
 def reset_control():
     global motor_traversal, motor_signal
     bot.motors_enabled = True
-    pitch_control.err_integral = 0.0
+    pitch_control.err_integral, travel_control.err_integral, heading_control.err_integral = 0.0, 0.0, 0.0
     motor_traversal = 0.0
     motor_signal = 0.0
     bot.heading = 0.0
@@ -109,8 +109,8 @@ while not bot.quit_flag:
             if abs(g_angle) > bot.config['pitch_limit']:
                 bot.motors_enabled = False
             else:
-                #pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
-                pitch_control.target_value = pitch_offset - travel_control.calcPID(motor_traversal, dt)
+                pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
+                #pitch_control.target_value = pitch_offset - travel_control.calcPID(motor_traversal, dt)
                 signal_pitch = pitch_control.calcPID(pitch_angle.get(), dt, -pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
                 signal_yaw = heading_control.calcPID(bot.heading, dt)
 
@@ -156,7 +156,7 @@ while not bot.quit_flag:
 
         # log if needed
         if bot.logging():
-            bot.log([bot.time_ms() / 1000.0, pitch_angle.get(), pitch_deriv, signal_pitch, motor_traversal])
+            bot.log([bot.time_ms() / 1000.0, pitch_angle.get(), pitch_deriv.get(), signal_pitch, motor_traversal])
         elif log_pending:
             log_pending = False
             bot.ble.send('log_output') # type: ignore

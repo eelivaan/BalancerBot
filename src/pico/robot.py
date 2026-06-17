@@ -1,5 +1,6 @@
 from machine import Pin, ADC, PWM, I2C, Timer
 from icm20948 import QwiicIcm20948
+from VL53L4CX import VL53L4CX
 from BLESerial import BLESerial
 import json, math, time
 
@@ -44,18 +45,38 @@ class BalancerBot:
         self.config_load_cb = config_load_callback
         self.load_config()
 
+        # motors
         self.servoL_PWM = PWM(Pin(self.config['left_motor_pin']), freq=50)
         self.servoR_PWM = PWM(Pin(self.config['right_motor_pin']), freq=50)
 
+        # inertial motion unit
         self.IMU_i2c = I2C(0, scl=Pin("GP21"), sda=Pin("GP20"), freq=400000)
-        print("I2C Scan result: ", end='')
-        for addr in self.IMU_i2c.scan():
-            print(hex(addr))
-        self.IMU = QwiicIcm20948(self.IMU_i2c)
+        addresses = self.IMU_i2c.scan()
+        print("I2C0 Scan result:", [hex(ad) for ad in addresses])
+        if len(addresses):
+            self.IMU = QwiicIcm20948(self.IMU_i2c, addresses[0])
+        else:
+            print("IMU I2C not found")
+            #self.IMU = None
+            self.quit_flag = True
 
+        # time-of-flight sensor
+        self.ToF_i2c = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
+        addresses = self.ToF_i2c.scan()
+        print("I2C1 Scan result:", [hex(ad) for ad in addresses])
+        if len(addresses):
+            self.ToF_sensor = VL53L4CX(self.ToF_i2c)
+            self.ToF_sensor.distance_mode = 2  # long range
+            self.ToF_sensor.timing_budget = 50  # ms
+        else:
+            print("ToF I2C not found")
+            self.ToF_sensor = None
+
+        # external button
         self.button = Pin("GP22", Pin.IN, Pin.PULL_UP)
         self.button_pressed_flag = False
 
+        # BLE off by default
         self.ble = None
 
         self.heading = 0.0
@@ -80,6 +101,50 @@ class BalancerBot:
         self.blink_timer.init(period=period, callback=lambda t: self.led_builtin.toggle())
 
 
+    def startIMU(self):
+        if self.IMU and self.IMU.begin():
+            if self.config['accel_dlpf'] == -1:
+                self.IMU.enableDlpfAccel(False)
+            else:
+                self.IMU.enableDlpfAccel(True)
+                self.IMU.setDLPFcfgAccel(self.config['accel_dlpf'])
+                
+            if self.config['gyro_dlpf'] == -1:
+                self.IMU.enableDlpfGyro(False)
+            else:
+                self.IMU.enableDlpfGyro(True)
+                self.IMU.setDLPFcfgGyro(self.config['gyro_dlpf'])
+            self.IMU_start_time = time.ticks_ms()
+            self.IMU_last_update_time = -1
+        else:
+            print("IMU initialization failed")
+            self.quit_flag = True
+
+    
+    def updateIMU(self):
+        if self.IMU and self.IMU.dataReady():
+            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
+            # track heading
+            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * (self.config['loop_interval'] / 1000.0)
+            self.heading = math.fmod(self.heading, 360.0)
+            # track time
+            self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+            return True
+        return False
+    
+
+    def startToF(self):
+        if self.ToF_sensor:
+            self.ToF_sensor.start_ranging()
+            return True
+        else:
+            return False
+    
+
+    def startBLE(self, ble_msg_callback):
+        self.ble = BLESerial(ble_msg_callback)
+    
+    
     def read_battery_voltage(self):
         raw = self.bat_adc.read_u16()
         return raw / 65535.0 * 3.3 * 2
@@ -104,58 +169,29 @@ class BalancerBot:
         return False
     
 
-    def startIMU(self):
-        if self.IMU.begin():
-            if self.config['accel_dlpf'] == -1:
-                self.IMU.enableDlpfAccel(False)
-            else:
-                self.IMU.enableDlpfAccel(True)
-                self.IMU.setDLPFcfgAccel(self.config['accel_dlpf'])
-                
-            if self.config['gyro_dlpf'] == -1:
-                self.IMU.enableDlpfGyro(False)
-            else:
-                self.IMU.enableDlpfGyro(True)
-                self.IMU.setDLPFcfgGyro(self.config['gyro_dlpf'])
-            self.IMU_start_time = time.ticks_ms()
-            self.IMU_last_update_time = -1
-        else:
-            print("IMU initialization failed")
-            self.quit_flag = True
+    def time_ms(self):
+        now = time.ticks_ms()
+        self.internal_time += time.ticks_diff(now, self.last_ticks)
+        self.last_ticks = now
+        return self.internal_time
 
-    
-    def updateIMU(self):
-        if self.IMU.dataReady():
-            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
-            # track heading
-            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * (self.config['loop_interval'] / 1000.0)
-            self.heading = math.fmod(self.heading, 360.0)
-            # track time
-            self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
-            return True
-        return False
-    
 
     def measure_accel_with_time(self):
-        v = self.IMU.get_accel()
+        v = self.IMU.get_accel() # type: ignore
         v['t'] = self.IMU_last_update_time
         return v
 
     def measure_gyro_with_time(self):
-        v = self.IMU.get_gyro()
+        v = self.IMU.get_gyro() # type: ignore
         v['t'] = self.IMU_last_update_time
         return v
 
     def measure_mag_with_time(self):
-        v = self.IMU.get_mag()
+        v = self.IMU.get_mag() # type: ignore
         v['t'] = self.IMU_last_update_time
         return v
 
 
-    def startBLE(self, ble_msg_callback):
-        self.ble = BLESerial(ble_msg_callback)
-    
-    
     def motor_input(self, left_signal, right_signal):
         # motor control
         if self.motors_enabled:
@@ -173,17 +209,10 @@ class BalancerBot:
     def send_status(self, custom_data):
         if self.ble and self.ble.is_connected():
             bat = self.read_battery_voltage()
-            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(), 
-                    't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat}
+            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(),  # type: ignore
+                    't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat}  # type: ignore
             data.update(custom_data)  # append custom data
             self.ble.send(json.dumps(data))
-
-
-    def time_ms(self):
-        now = time.ticks_ms()
-        self.internal_time += time.ticks_diff(now, self.last_ticks)
-        self.last_ticks = now
-        return self.internal_time
 
 
     def off(self):
@@ -196,6 +225,9 @@ class BalancerBot:
         if self.blink_timer:
             self.blink_timer.deinit()
         self.led_builtin.off()
+
+        if self.ToF_sensor:
+            self.ToF_sensor.stop_ranging()
 
         if self.ble:
             self.ble.deactivate()
