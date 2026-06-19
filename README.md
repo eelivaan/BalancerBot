@@ -3,7 +3,7 @@ The project also features a desktop user interface for tuning the PID parameters
 
 
 
-https://github.com/user-attachments/assets/5c186211-f8d9-4368-bdf9-fe8e89cf2444
+https://github.com/user-attachments/assets/d2c598fd-b4f8-46e6-aca9-dc9cf0eea812
 
 
 
