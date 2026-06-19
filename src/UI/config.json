@@ -31,9 +31,11 @@
   "pitch_filter": 3,
   "gyro_filter": 3,
   "pitch_limit": 60.0,
+  "full_speed_pitch": 15.0,
   "speed_filter": 55,
   "use_gyro_as_D": true,
   "loop_interval": 20,
   "status_send_period": 240,
-  "signal_cutoff_ms": 800
+  "signal_cutoff_ms": 900,
+  "stop_distance_cm": 30
 }

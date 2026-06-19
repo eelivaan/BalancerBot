@@ -1,6 +1,6 @@
 from utime import sleep, sleep_us, ticks_ms, ticks_us, ticks_diff
 from control import PIDController, limit
-from robot import BalancerBot, SlidingAverage
+from robot import BalancerBot, SlidingAverage, sign
 import json, math
 
 sleep(1.5)
@@ -31,11 +31,12 @@ def ble_msg_callback(msg):
         if t == 'pid0':
             pitch_control.configure(params)
             bot.config['pid0']['target'] = params['target']
-            bot.motors_enabled = params['en']
         elif t == 'pid1':
             travel_control.configure(params)
         elif t == 'pid2':
             heading_control.configure(params)
+        elif t == 'motors_en':
+            bot.motors_enabled = params['en']
         # download config file
         elif t == 'config':
             with open("config.json", "w") as f:
@@ -69,7 +70,7 @@ def reset_control():
     bot.heading = 0.0
 
 prev_status_time = ticks_ms()
-tick_duration = 0
+tick_duration_us = 0
 max_tick_duration = 0
 signal_change_counter = 0
 log_pending = False
@@ -113,6 +114,9 @@ while not bot.quit_flag:
             # control signal from pitch angle
             if abs(g_angle) > bot.config['pitch_limit']:
                 bot.motors_enabled = False
+            elif abs(g_angle) > bot.config['full_speed_pitch']:
+                signal_pitch = -sign(g_angle)
+                signal_yaw = 0.0
             else:
                 pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
                 #pitch_control.target_value = pitch_offset - travel_control.calcPID(motor_traversal, dt)
@@ -132,7 +136,7 @@ while not bot.quit_flag:
 
         if dist := bot.readToF():
             measured_dist = dist
-            if measured_dist < 30:
+            if measured_dist < bot.config['stop_distance_cm']:
                 bot.motors_enabled = False
 
         # apply input to motors
@@ -159,10 +163,10 @@ while not bot.quit_flag:
             bot.quit_flag = True
 
         t2 = ticks_us()
-        tick_duration = ticks_diff(t2, t1)
-        max_tick_duration = max(tick_duration, max_tick_duration)
+        tick_duration_us = ticks_diff(t2, t1)
+        max_tick_duration = max(tick_duration_us, max_tick_duration)
 
-        sleep_us(max(10, bot.config['loop_interval'] * 1000 - tick_duration))
+        sleep_us(max(10, bot.config['loop_interval'] * 1000 - tick_duration_us))
 
         # log if needed
         if bot.logging():

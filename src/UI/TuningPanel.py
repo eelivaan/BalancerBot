@@ -22,7 +22,7 @@ class GUIApp(tk.Tk):
         self.enable_motors = tk.BooleanVar(value=False)
         self.motors_checkbox = ttk.Checkbutton(self, text="Enable Motors", variable=self.enable_motors)
         self.motors_checkbox.grid(pady=5, padx=5, row=1, column=0)
-        self.motors_checkbox.configure(command=self.send_pid)  # Call send_pid when toggled
+        self.motors_checkbox.configure(command=self.send_en)
 
         # load initial PID values from config.json
         with open("config.json", "r") as f:
@@ -111,11 +111,7 @@ class GUIApp(tk.Tk):
 
     def send_pid(self):
         try:
-            msg = json.dumps({"type": "pid0", 
-                              "Kp": self.Kp0.get(), "Ki": self.Ki0.get(), "Kd": self.Kd0.get(), 
-                              "target": self.target0.get(), "max": self.max0.get(), "en": self.enable_motors.get()})
-            ble_thread.send(msg)
-            for c in range(1,3):
+            for c in range(3):
                 msg = json.dumps({"type": f"pid{c}", 
                                   "Kp": getattr(self, f'Kp{c}').get(), 
                                   "Ki": getattr(self, f'Ki{c}').get(), 
@@ -124,7 +120,12 @@ class GUIApp(tk.Tk):
                                   "max": getattr(self, f'max{c}').get()})
                 ble_thread.send(msg)
         except ValueError:
-            pass  # Ignore invalid input
+            print("Invalid values")  # Ignore invalid input
+
+
+    def send_en(self):
+        msg = json.dumps({"type": "motors_en", "en": self.enable_motors.get()})
+        ble_thread.send(msg)
 
 
     def download_config(self):
