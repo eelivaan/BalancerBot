@@ -74,7 +74,8 @@ class GUIApp(tk.Tk):
                     text += f"Heading: {data['h']:.1f}°\n"
                     text += f"Motor Speed: {data['mt']:.3f}\n"
                     text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
-                    text += f"Battery: {data['b']:.2f} V"
+                    text += f"Battery: {data['b']:.2f} V\n"
+                    text += f"Distance: {data['d']:.1f} cm"
                     self.accel_label.config(text=text)
             if ble_thread.check_ack():
                 self.ok_label.grid()  # Show "ok" label
@@ -104,7 +105,7 @@ class GUIApp(tk.Tk):
                 pid['target'] = getattr(self, f'target{c}').get()
                 pid['max'] = getattr(self, f'max{c}').get()
             with open("config.json", "w") as f:
-                json.dump(config, f, indent=4) # type: ignore
+                json.dump(config, f, indent=2) # type: ignore
                 print("config.json updated")
     
 
@@ -139,7 +140,7 @@ class GUIApp(tk.Tk):
         ble_thread.send(msg)
 
 
-    def show_log(self, log):
+    def show_log(self, log: list):
         fields = log[0].split(',')
         series = dict()
         for f in fields:

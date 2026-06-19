@@ -1,6 +1,6 @@
 from machine import I2C, Pin
-from icm20948 import QwiicIcm20948, acc_d50bw4_n68bw8, acc_d23bw9_n34bw4 
-from VL53L4CX import VL53L4CX
+from icm20948 import QwiicIcm20948, acc_d50bw4_n68bw8, acc_d23bw9_n34bw4  #type:ignore
+from VL53L4CX import VL53L4CX  #type:ignore
 from BLESerial import BLESerial # type: ignore
 import time, math
 
@@ -12,6 +12,14 @@ print("I2C0 Scan result: ", end='')
 for addr in i2c0.scan():
     print(hex(addr))
 
+IMU = QwiicIcm20948(i2c0)
+
+b = IMU.begin()
+if not b:
+    print("IMU initialization unsuccessful")
+    raise KeyboardInterrupt
+
+
 i2c1 = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
 print("I2C1 Scan result: ", end='')
 for addr in i2c1.scan():
@@ -21,7 +29,7 @@ ToF_sensor = VL53L4CX(i2c1)
 
 # OPTIONAL: can set non-default values
 ToF_sensor.distance_mode = 2
-ToF_sensor.timing_budget = 100
+ToF_sensor.timing_budget = 50
 
 print("VL53L4CX Simple Test.")
 print("--------------------")
@@ -39,15 +47,6 @@ else:
 print(f"Timing Budget: {ToF_sensor.timing_budget}")
 print("--------------------")
 
-ToF_sensor.start_ranging()
-
-IMU = QwiicIcm20948(i2c0)
-
-b = IMU.begin()
-if not b:
-    print("IMU initialization unsuccessful")
-    raise KeyboardInterrupt
-
 run = True
 def on_notify(message):
     global run
@@ -57,17 +56,42 @@ ble_serial = BLESerial(on_notify)
 
 IMU.enableDlpfAccel(True)
 IMU.setDLPFcfgAccel(acc_d23bw9_n34bw4)
+
+ToF_sensor.start_ranging()
+
+MAP = False
+if MAP:
+    ToF_sensor.roi_xy = (4,4)
+    depthmap = [[0 for x in range(4)] for y in range(4)]
+    pads = (145, 177, 209, 241, 
+            149, 181, 213, 245,
+            110, 78, 46, 14, 
+            106, 74, 42, 10)
+    i = 0
+    ToF_sensor.roi_center = pads[0]
+
+dt = 0
 while run:
     try:
+        t1 = time.ticks_ms()
+
         if ToF_sensor.data_ready:
-            #print(f"Dist: {ToF_sensor.distance} cm, Sig: {ToF_sensor.sigma} cm, Stat: {ToF_sensor.range_status}")
-            ble_serial.send(f"0 Dist: {ToF_sensor.distance} cm, Sig: {ToF_sensor.sigma} cm, Stat: {ToF_sensor.range_status}")
+            if MAP:
+                depthmap[i // 4][i % 4] = round(ToF_sensor.distance)
+                i = (i + 1) % len(pads)
+                ToF_sensor.roi_center = pads[i]
+                if i == 0:
+                    msg = "0" + '\n'.join([' '.join([f"{d:3d}" for d in row]) for row in depthmap])
+                    ble_serial.send(msg)
+            else:
+                #print(f"Dist: {ToF_sensor.distance} cm, Sig: {ToF_sensor.sigma} cm, Stat: {ToF_sensor.range_status}")
+                ble_serial.send(f"0 Dist: {ToF_sensor.distance} cm, Sig: {ToF_sensor.sigma} cm, Stat: {ToF_sensor.range_status}")
             ToF_sensor.clear_interrupt()
-        else:
-            print("Waiting for VL53L4CX data")
+        #else:
+            #print("Waiting for VL53L4CX data")
             #time.sleep(0.3)
 
-        if IMU.dataReady():
+        if IMU.dataReady() and False:
             IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
             ax = IMU.axRaw / 16384.0
             ay = IMU.ayRaw / 16384.0
@@ -80,14 +104,16 @@ while run:
             ble_serial.send(f"1 ax: {ax:.3f} ay: {ay:.3f} az: {az:.3f}")
             ble_serial.send(f"2 pitch: {pitch:.3f}")
             ble_serial.send(f"3 mx: {mx} my: {my} mz: {mz}")
-        else:
-            print("Waiting for IMU data")
-            time.sleep(0.3)
 
-        time.sleep(0.2)
+        #ble_serial.send(f"4 dt: {dt} ms")
+
+        t2 = time.ticks_ms()
+        dt = time.ticks_diff(t2, t1)
+        time.sleep_ms(max(30 - dt, 0))
     except KeyboardInterrupt:
         break
 
 ToF_sensor.stop_ranging()
+time.sleep(1.0)
 ble_serial.deactivate()
 led_builtin.off()

@@ -29,12 +29,12 @@ class GUIApp(tk.Tk):
 
     def tick(self):
         if ble_thread.is_connected():
-            if data := ble_thread.read():
+            while data := ble_thread.read():
                 self.textmap[data[0]] = data[1:]
-                text = ""
-                for key, value in self.textmap.items():
-                    text += value + '\n'
-                self.textarea.config(text=text)
+            text = ""
+            for key, value in self.textmap.items():
+                text += value + '\n'
+            self.textarea.config(text=text)
             if ble_thread.check_ack():
                 self.ok_label.grid()  # Show "ok" label
                 self.after(2000, lambda: self.ok_label.grid_remove())

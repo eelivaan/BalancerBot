@@ -139,6 +139,14 @@ class BalancerBot:
             return True
         else:
             return False
+        
+    def readToF(self):
+        if self.ToF_sensor and self.ToF_sensor.data_ready:
+            d = self.ToF_sensor.distance
+            self.ToF_sensor.clear_interrupt()
+            return d
+        else:
+            return None
     
 
     def startBLE(self, ble_msg_callback):

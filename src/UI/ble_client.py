@@ -109,7 +109,7 @@ class BLEThread(threading.Thread):
                             for i in range(0, len(msg), 20):
                                 chunk = msg[i:i+20]
                                 await client.write_gatt_char(UART_RX_UUID, chunk.encode("utf-8"))
-                        await asyncio.sleep(0.05)
+                        await asyncio.sleep(0.03)
 
                     if client.is_connected:
                         await client.stop_notify(UART_TX_UUID)

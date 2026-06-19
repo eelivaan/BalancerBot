@@ -26,35 +26,39 @@ def ble_msg_callback(msg):
     print("Received BLE message")
     try:
         params = json.loads(msg)
+        t = params.get('type')
         # update PID params
-        if params.get('type') == 'pid0':
+        if t == 'pid0':
             pitch_control.configure(params)
             bot.config['pid0']['target'] = params['target']
             bot.motors_enabled = params['en']
-        elif params.get('type') == 'pid1':
+        elif t == 'pid1':
             travel_control.configure(params)
-        elif params.get('type') == 'pid2':
+        elif t == 'pid2':
             heading_control.configure(params)
         # download config file
-        elif params.get('type') == 'config':
+        elif t == 'config':
             with open("config.json", "w") as f:
                 f.write(params['content'])
             bot.load_config()  # Reload config to apply changes
-        elif params.get('type') == 'quit':
+        elif t == 'quit':
             bot.quit_flag = True
-        elif params.get('type') == 'calibrate':
+        elif t == 'calibrate':
             bot.IMU.calibrate()
             pitch_angle = None
-        elif params.get('type') == 'log':
+        elif t == 'log':
             bot.start_logging(['time', 'pitch', 'gyro', 'control', 'motor_position'], duration=5)
             log_pending = True
+        elif t == 'rc':
+            travel_control.target_value = params['sp']
+            heading_control.target_value = params['hd']
     except (json.JSONDecodeError, KeyError) as e:
         print("Unhandled BLE message: ", msg)
 #end ble_msg_callback
 
 bot.startBLE(ble_msg_callback)
-
 bot.startIMU()
+bot.startToF()
 
 def reset_control():
     global motor_traversal, motor_signal
@@ -74,6 +78,7 @@ pitch_angle = SlidingAverage(bot.config['pitch_filter'])
 pitch_deriv = SlidingAverage(bot.config['gyro_filter'])
 motor_traversal = 0.0
 motor_signal = 0.0
+measured_dist = 600.0
 
 # main loop
 while not bot.quit_flag:
@@ -125,6 +130,11 @@ while not bot.quit_flag:
         else:
             signal_change_counter = 0
 
+        if dist := bot.readToF():
+            measured_dist = dist
+            if measured_dist < 30:
+                bot.motors_enabled = False
+
         # apply input to motors
         if bot.motors_enabled:
             motor_signal = limit(motor_signal + signal_pitch, 1.0)
@@ -139,7 +149,7 @@ while not bot.quit_flag:
         if bot.config['status_send_period'] > 0 and ticks_diff(ticks_ms(), prev_status_time) > bot.config['status_send_period']:
             prev_status_time = ticks_ms()
             bot.send_status({'s': pitch_angle.get(), 'st': pitch_control.target_value,
-                             'dt': max_tick_duration, 'mt': bot.speed.get()})
+                             'dt': max_tick_duration, 'mt': bot.speed.get(), 'd': measured_dist})
             max_tick_duration = 0
 
         # quit when button is pressed
