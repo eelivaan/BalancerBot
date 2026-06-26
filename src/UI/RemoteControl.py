@@ -18,7 +18,7 @@ class RemoteControlUI(tk.Tk):
         self.bind("<KeyPress-Escape>", lambda event: self.destroy())  # Press Escape to quit
 
         font = ("Consolas", 11)
-        self.text_label = ttk.Label(self, text="N/A", font=font, justify="left", anchor="w", width=70, foreground="#e0e0e0", background="#1e1e1e")
+        self.text_label = ttk.Label(self, text="No connection", font=font, justify="left", anchor="w", width=70, foreground="#e0e0e0", background="#1e1e1e")
         self.text_label.pack(padx=10, pady=10)
 
         self.motors_btn = ttk.Button(self, text="Enable motors", command=self.lift)
@@ -104,7 +104,7 @@ class RemoteControlUI(tk.Tk):
                 self.ok_label.pack(side="left", padx=10, pady=10, ipadx=5)
                 self.after(1000, lambda: self.ok_label.pack_forget())
         else:
-            self.text_label.config(text="N/A")
+            self.text_label.config(text="No connection")
 
         self.after(100, self.tick)
 #end RemoteControlUI
