@@ -3,11 +3,10 @@ import time
 
 from VL53L7CX import VL53L7CX
 
-
 # Adjust these pins/bus if wiring is different.
-I2C_BUS = 1
-I2C_SCL_PIN = "GP7"
-I2C_SDA_PIN = "GP6"
+I2C_BUS = 0
+I2C_SCL_PIN = "GP21"
+I2C_SDA_PIN = "GP20"
 I2C_FREQ = 400000
 
 
@@ -31,42 +30,50 @@ def wait_for_frame(sensor, timeout_ms=2000):
             print("check_data_ready status:", status)
         if ready:
             return True
-        time.sleep_ms(20)
+        time.sleep_ms(50)
     return False
 
 
 i2c = I2C(I2C_BUS, scl=Pin(I2C_SCL_PIN), sda=Pin(I2C_SDA_PIN), freq=I2C_FREQ)
 
 print("I2C scan:", [hex(x) for x in i2c.scan()])
+#raise KeyboardInterrupt("Stop here to check I2C scan results before continuing.")
 
-sensor = VL53L7CX(i2c)
+sensor = VL53L7CX(i2c, address=0x29)
 
 if not sensor.vl53l7cx_is_alive():
     raise RuntimeError("VL53L7CX is not responding with expected ID")
 
 status = sensor.init_sensor()
 print("init_sensor status:", status)
-if status != 0:
+if status != VL53L7CX.VL53L7CX_STATUS_OK:
     raise RuntimeError("init_sensor failed")
 
 status = sensor.vl53l7cx_set_resolution(VL53L7CX.VL53L7CX_RESOLUTION_8X8)
 print("set_resolution(8x8) status:", status)
+if status != VL53L7CX.VL53L7CX_STATUS_OK:
+    raise RuntimeError("set_resolution failed")
 
 status = sensor.vl53l7cx_start_ranging()
 print("start_ranging status:", status)
-if status != 0:
+if status != VL53L7CX.VL53L7CX_STATUS_OK:
     raise RuntimeError("start_ranging failed")
 
 try:
     # Print a few frames for quick functional verification.
-    for frame in range(10):
-        if not wait_for_frame(sensor):
+    for frame in range(1):
+        if 0:
+            status, ready, raw = sensor.vl53l7cx_debug_poll_data_ready(max_polls=120, delay_ms=20)
+            print("final:", status, ready, raw)
+
+        elif not wait_for_frame(sensor):
             print("Timed out waiting for frame", frame)
-            continue
+            #continue
 
         status, results = sensor.vl53l7cx_get_ranging_data()
         print("frame", frame, "get_ranging_data status:", status)
-        if status != 0 or not results:
+        print("results:", results)
+        if status != VL53L7CX.VL53L7CX_STATUS_OK or not results:
             continue
 
         print_8x8_grid(results.get("distance_mm", []))

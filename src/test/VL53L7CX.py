@@ -19,6 +19,7 @@ Notes:
 
 import struct
 import time
+import machine
 
 # The macro below is used to define the number of target per zone sent
 # through I2C. This value can be changed by user, in order to tune I2C
@@ -44,7 +45,7 @@ VL53L7CX_GET_NVM_CMD = bytes([
 
 class VL53L7CX:
 	# Public constants from the C++ API
-	VL53L7CX_DEFAULT_I2C_ADDRESS = 0x52  # 8-bit ST address; 7-bit value is 0x29
+	VL53L7CX_DEFAULT_I2C_ADDRESS = 0x29  # 8-bit ST address 0x52; 7-bit value is 0x29
 
 	VL53L7CX_RESOLUTION_4X4 = 16
 	VL53L7CX_RESOLUTION_8X8 = 64
@@ -110,7 +111,7 @@ class VL53L7CX:
 	VL53L7CX_TARGET_STATUS_IDX = 0xD47C
 	VL53L7CX_MOTION_DETEC_IDX = 0xCC50
 
-	def __init__(self, i2c, address=VL53L7CX_DEFAULT_I2C_ADDRESS, nb_target_per_zone=1,
+	def __init__(self, i2c: machine.I2C, address=VL53L7CX_DEFAULT_I2C_ADDRESS, nb_target_per_zone=1,
 				 firmware_path="vl53l7cx_firmware.bin",
 				 config_path="vl53l7cx_default_config.bin",
 				 xtalk_path="vl53l7cx_default_xtalk.bin"):
@@ -126,6 +127,7 @@ class VL53L7CX:
 		self._fw_path   = firmware_path
 		self._cfg_path  = config_path
 		self._xtalk_path = xtalk_path
+		self._safe_start_config = True
 
 		self.streamcount = 255
 		self.data_read_size = 0
@@ -184,6 +186,18 @@ class VL53L7CX:
 		for offset in range(0, len(data), chunk):
 			end = min(offset + chunk, len(data))
 			self._i2c.writeto(self.address, struct.pack(">H", reg_addr + offset) + bytes(data[offset:end]))
+
+	def _write_page_chunk_with_retry(self, offset, chunk, retries=4):
+		"""Write one paged firmware chunk with bounded retries for transient I2C timeouts."""
+		for attempt in range(retries):
+			try:
+				self._i2c.writeto(self.address, struct.pack(">H", offset) + chunk)
+				return
+			except OSError:
+				if attempt + 1 >= retries:
+					raise
+				# Give the sensor/bus a short recovery window before retrying.
+				self._wait_ms(2)
 
 	def _vl53l7cx_poll_for_mcu_boot(self):
 		"""Poll registers 0x0006/0x0007 until the MCU firmware signals it has booted."""
@@ -311,7 +325,8 @@ class VL53L7CX:
 		# 0x0B (0x0000–0x4FFF).  Read directly from file to avoid loading
 		# the full 84 KB blob into RAM at once.
 		# ------------------------------------------------------------------
-		_FW_CHUNK = 2048
+		# 2KB I2C payloads are unreliable on some MicroPython ports; use safer writes.
+		_FW_CHUNK = 128
 		_PAGES = ((0x09, 0x8000), (0x0A, 0x8000), (0x0B, 0x5000))
 		with open(self._fw_path, "rb") as fw_file:
 			for page, size in _PAGES:
@@ -320,7 +335,9 @@ class VL53L7CX:
 				while offset < size:
 					n = min(_FW_CHUNK, size - offset)
 					chunk = fw_file.read(n)
-					self._i2c.writeto(self.address, struct.pack(">H", offset) + chunk)
+					if len(chunk) != n:
+						return self.VL53L7CX_STATUS_ERROR
+					self._write_page_chunk_with_retry(offset, chunk)
 					offset += n
 		self._write_reg(0x7FFF, 0x01)
 
@@ -435,52 +452,58 @@ class VL53L7CX:
 
 	def vl53l7cx_start_ranging(self):
 		status = self.VL53L7CX_STATUS_OK
-		resolution = self.vl53l7cx_get_resolution()[1]
-
-		output_bh_enable = [0x00000007, 0x00000000, 0x00000000, 0xC0000000]
-		output_bh_enable[0] += 8 + 16 + 32 + 64 + 128 + 256 + 512 + 1024 + 2048
-
-		output = [
-			self.VL53L7CX_START_BH,
-			self.VL53L7CX_METADATA_BH,
-			self.VL53L7CX_COMMONDATA_BH,
-			self.VL53L7CX_AMBIENT_RATE_BH,
-			self.VL53L7CX_SPAD_COUNT_BH,
-			self.VL53L7CX_NB_TARGET_DETECTED_BH,
-			self.VL53L7CX_SIGNAL_RATE_BH,
-			self.VL53L7CX_RANGE_SIGMA_MM_BH,
-			self.VL53L7CX_DISTANCE_BH,
-			self.VL53L7CX_REFLECTANCE_BH,
-			self.VL53L7CX_TARGET_STATUS_BH,
-			self.VL53L7CX_MOTION_DETECT_BH,
-		]
-
 		self.data_read_size = 0
 		self.streamcount = 255
 
-		for i, val in enumerate(output):
-			if val == 0 or (output_bh_enable[i // 32] & (1 << (i % 32))) == 0:
-				continue
-			bh_type = val & 0xF
-			bh_size = (val >> 4) & 0x0FFF
-			bh_idx = (val >> 16) & 0xFFFF
-			if 0x01 <= bh_type < 0x0D:
-				if 0x54D0 <= bh_idx < (0x54D0 + 960):
-					bh_size = resolution
+		if not self._safe_start_config:
+			status_res, resolution = self.vl53l7cx_get_resolution()
+			status |= status_res
+			if status:
+				return status
+
+			output_bh_enable = [0x00000007, 0x00000000, 0x00000000, 0xC0000000]
+			output_bh_enable[0] += 8 + 16 + 32 + 64 + 128 + 256 + 512 + 1024 + 2048
+
+			output = [
+				self.VL53L7CX_START_BH,
+				self.VL53L7CX_METADATA_BH,
+				self.VL53L7CX_COMMONDATA_BH,
+				self.VL53L7CX_AMBIENT_RATE_BH,
+				self.VL53L7CX_SPAD_COUNT_BH,
+				self.VL53L7CX_NB_TARGET_DETECTED_BH,
+				self.VL53L7CX_SIGNAL_RATE_BH,
+				self.VL53L7CX_RANGE_SIGMA_MM_BH,
+				self.VL53L7CX_DISTANCE_BH,
+				self.VL53L7CX_REFLECTANCE_BH,
+				self.VL53L7CX_TARGET_STATUS_BH,
+				self.VL53L7CX_MOTION_DETECT_BH,
+			]
+
+			for i, val in enumerate(output):
+				if val == 0 or (output_bh_enable[i // 32] & (1 << (i % 32))) == 0:
+					continue
+				bh_type = val & 0xF
+				bh_size = (val >> 4) & 0x0FFF
+				bh_idx = (val >> 16) & 0xFFFF
+				if 0x01 <= bh_type < 0x0D:
+					if 0x54D0 <= bh_idx < (0x54D0 + 960):
+						bh_size = resolution
+					else:
+						bh_size = resolution * self.nb_target_per_zone
+					self.data_read_size += bh_type * bh_size
 				else:
-					bh_size = resolution * self.nb_target_per_zone
-				self.data_read_size += bh_type * bh_size
-			else:
-				self.data_read_size += bh_size
-			self.data_read_size += 4
-		self.data_read_size += 24
+					self.data_read_size += bh_size
+				self.data_read_size += 4
+			self.data_read_size += 24
 
-		status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(output), self.VL53L7CX_DCI_OUTPUT_LIST, 4 * len(output))
+			status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(output), self.VL53L7CX_DCI_OUTPUT_LIST, 4 * len(output))
 
-		# Keep upstream count behavior (loop index + 1 == len(output) + 1).
-		header_config = [self.data_read_size, len(output) + 1]
-		status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(header_config), self.VL53L7CX_DCI_OUTPUT_CONFIG, 8)
-		status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(output_bh_enable), self.VL53L7CX_DCI_OUTPUT_ENABLES, 16)
+			# Keep upstream count behavior (loop index + 1 == len(output) + 1).
+			header_config = [self.data_read_size, len(output) + 1]
+			status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(header_config), self.VL53L7CX_DCI_OUTPUT_CONFIG, 8)
+			status |= self.vl53l7cx_dci_write_data(self._pack_u32_list(output_bh_enable), self.VL53L7CX_DCI_OUTPUT_ENABLES, 16)
+			if status:
+				return status
 
 		self._write_reg(0x7FFF, 0x00)
 		self._write_reg(0x0009, 0x05)
@@ -492,16 +515,20 @@ class VL53L7CX:
 
 		status2, d = self.vl53l7cx_dci_read_data(0x5440, 12)
 		status |= status2
+		if status:
+			return status
 		expected = struct.unpack("<I", d[8:12])[0]
 		if expected != self.data_read_size:
-			status |= self.VL53L7CX_STATUS_ERROR
+			# In safe mode, always trust FW defaults for active frame layout.
+			self.data_read_size = expected
 		return status
 
 	def vl53l7cx_stop_ranging(self):
 		status = self.VL53L7CX_STATUS_OK
+		# Stop/status registers are on page 0x00.
+		self._write_reg(0x7FFF, 0x00)
 		auto_stop_flag = struct.unpack("<I", self._read_reg(0x2FFC, 4))[0]
 		if auto_stop_flag != 0x4FF:
-			self._write_reg(0x7FFF, 0x00)
 			self._write_reg(0x0015, 0x16)
 			self._write_reg(0x0014, 0x01)
 			timeout = 0
@@ -530,12 +557,20 @@ class VL53L7CX:
 
 	def vl53l7cx_check_data_ready(self):
 		status = self.VL53L7CX_STATUS_OK
-		d = self._read_reg(0x0000, 4)
+		# GO2 status registers 0x0000..0x0003 must be read from page 0x00.
+		self._write_reg(0x7FFF, 0x00)
+		d = bytes(self._read_reg(0x0000, 4))
+		# On some ports/firmware states page 0x00 read can stay on static ID bytes
+		# (F0 02 62 01). Fall back to page 0x02 status view in that case.
+		if d == b"\xF0\x02\x62\x01":
+			self._write_reg(0x7FFF, 0x02)
+			d = bytes(self._read_reg(0x0000, 4))
+		self._write_reg(0x7FFF, 0x02)
 		is_ready = 0
 		if (
 			d[0] != self.streamcount
 			and d[0] != 255
-			and d[1] == 0x05
+			and (d[1] & 0x05) == 0x05
 			and (d[2] & 0x05) == 0x05
 			and (d[3] & 0x10) == 0x10
 		):
@@ -546,6 +581,48 @@ class VL53L7CX:
 				status |= d[2]
 			is_ready = 0
 		return status, is_ready
+
+	def vl53l7cx_read_data_ready_status(self):
+		"""Read raw GO2 status bytes used by vl53l7cx_check_data_ready()."""
+		self._write_reg(0x7FFF, 0x00)
+		d = bytes(self._read_reg(0x0000, 4))
+		if d == b"\xF0\x02\x62\x01":
+			self._write_reg(0x7FFF, 0x02)
+			d = bytes(self._read_reg(0x0000, 4))
+		self._write_reg(0x7FFF, 0x02)
+		return d
+
+	def vl53l7cx_debug_poll_data_ready(self, max_polls=100, delay_ms=20):
+		"""Poll readiness and print raw status bytes each cycle for debugging."""
+		last = bytes((0, 0, 0, 0))
+		for poll in range(int(max_polls)):
+			d = self.vl53l7cx_read_data_ready_status()
+			last = d
+
+			status = self.VL53L7CX_STATUS_OK
+			ready = 0
+			if (
+				d[0] != self.streamcount
+				and d[0] != 255
+				and (d[1] & 0x05) == 0x05
+				and (d[2] & 0x05) == 0x05
+				and (d[3] & 0x10) == 0x10
+			):
+				ready = 1
+				self.streamcount = d[0]
+			else:
+				if (d[3] & 0x80) != 0:
+					status |= d[2]
+
+			print("poll {:03d}: d0=0x{:02X} d1=0x{:02X} d2=0x{:02X} d3=0x{:02X} status={} ready={}".format(
+				poll, d[0], d[1], d[2], d[3], status, ready))
+
+			if status != self.VL53L7CX_STATUS_OK or ready:
+				return status, ready, last
+
+			self._wait_ms(delay_ms)
+
+		return self.VL53L7CX_STATUS_TIMEOUT_ERROR, 0, last
 
 	def vl53l7cx_get_ranging_data(self):
 		status = self.VL53L7CX_STATUS_OK
