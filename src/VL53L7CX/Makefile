@@ -11,6 +11,8 @@ ARCH = armv7m
 # not needed maybe?
 BOARD = RPI_PICO2_W
 
+#include ../pico-sdk-import/Makefile
+
 # Include to get the rules for compiling and linking the module
 #include $(MPY_DIR)/py/dynruntime.mk
 

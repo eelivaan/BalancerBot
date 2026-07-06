@@ -1,2 +1,5 @@
 costs.ods
 notes.md
+src/pico-sdk-import/*
+!src/pico-sdk-import/CMakeLists.txt
+!src/pico-sdk-import/pico_sdk_import.cmake
