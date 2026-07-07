@@ -45,8 +45,8 @@
 #include <stdio.h>
 #include "vl53l7cx_platform_config.h"
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "hardware/gpio.h"
 
 // What's the meaning of this value in Pico?
 #define DEFAULT_I2C_BUFFER_LEN 32

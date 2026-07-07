@@ -111,7 +111,7 @@ class VL53L7CX:
 	VL53L7CX_TARGET_STATUS_IDX = 0xD47C
 	VL53L7CX_MOTION_DETEC_IDX = 0xCC50
 
-	def __init__(self, i2c: machine.I2C, address=VL53L7CX_DEFAULT_I2C_ADDRESS, nb_target_per_zone=1,
+	def __init__(self, i2c: machine.I2C, lpn_pin: machine.Pin, address=VL53L7CX_DEFAULT_I2C_ADDRESS, nb_target_per_zone=1,
 				 firmware_path="vl53l7cx_firmware.bin",
 				 config_path="vl53l7cx_default_config.bin",
 				 xtalk_path="vl53l7cx_default_xtalk.bin"):
@@ -122,6 +122,7 @@ class VL53L7CX:
 		  xtalk_path    : VL53L7CX_DEFAULT_XTALK      - 776 bytes
 		"""
 		self._i2c = i2c
+		self._lpn_pin = lpn_pin
 		self.address = address
 		self.nb_target_per_zone = int(nb_target_per_zone)
 		self._fw_path   = firmware_path
@@ -143,12 +144,12 @@ class VL53L7CX:
 	def _write_reg(self, reg_addr, data):
 		if isinstance(data, int):
 			data = bytes((data & 0xFF,))
-		self._i2c.writeto(self.address, struct.pack(">H", reg_addr) + data)
+		self._i2c.writeto(self.address, struct.pack(">H", reg_addr) + data, True)
 
 	def _read_reg(self, reg_addr, length=1):
 		out = bytearray(length)
-		self._i2c.writeto(self.address, struct.pack(">H", reg_addr), True)
-		self._i2c.readfrom_into(self.address, out)
+		self._i2c.writeto(self.address, struct.pack(">H", reg_addr), False)
+		self._i2c.readfrom_into(self.address, out, True)
 		return out
 
 	def _wait_ms(self, ms):
@@ -219,6 +220,7 @@ class VL53L7CX:
 	# Public API closely matching stm32duino names
 	# ---------------------------------------------------------------------
 	def begin(self):
+		self._lpn_pin.low()
 		return self.VL53L7CX_STATUS_OK
 
 	def end(self):
@@ -226,6 +228,7 @@ class VL53L7CX:
 
 	def init_sensor(self, addr=None):
 		status = self.VL53L7CX_STATUS_OK
+		self._lpn_pin.high()
 		if addr is not None:
 			# Match stm32duino semantics: init_sensor() accepts 8-bit I2C addresses.
 			# Accept 7-bit too for convenience and normalize to 8-bit before writing.
