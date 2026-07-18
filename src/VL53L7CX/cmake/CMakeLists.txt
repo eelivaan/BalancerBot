@@ -1,20 +1,37 @@
 cmake_minimum_required(VERSION 3.13)
 
 # Keep existing user-home based SDK defaults.
-set(USERHOME c:/Users/eeli/)
-set(picotoolVersion "2.2.0-a4")
-set(toolchainVersion "14_2_Rel1")
+if(WIN32)
+        set(USERHOME "c:/users/eeli")
+        set(picotoolVersion "2.2.0-a4")
+        set(toolchainVersion "14_2_Rel1")
+        set(MPY_DIR "${USERHOME}/documents/robotics/micropython-v1.28.0" CACHE PATH "Path to MicroPython source tree")
+        # User-configurable paths (cached for easy override).
+        set(PICO_SDK_PATH "${USERHOME}/.pico-sdk/sdk/2.2.0" CACHE PATH "Path to Pico SDK")
+        set(PICO_TOOLCHAIN_PATH "${USERHOME}/.pico-sdk/toolchain/${toolchainVersion}")
+        set(picotool_HINT "${USERHOME}/.pico-sdk/picotool/${picotoolVersion}/picotool")
+else()
+        set(USERHOME "/home/eeli")
+        set(MPY_DIR "${USERHOME}/pico/micropython" CACHE PATH "Path to MicroPython source tree")
+        set(PICO_SDK_PATH "${MPY_DIR}/lib/pico-sdk" CACHE PATH "Path to Pico SDK")
+endif()
 
-# User-configurable paths (cached for easy override).
-set(PICO_SDK_PATH "${USERHOME}/.pico-sdk/sdk/2.2.0" CACHE PATH "Path to Pico SDK")
-set(PICO_TOOLCHAIN_PATH "${USERHOME}/.pico-sdk/toolchain/${toolchainVersion}")
-
-set(picotool_HINT "${USERHOME}/.pico-sdk/picotool/${picotoolVersion}/picotool")
 if(EXISTS ${picotool_HINT})
         set(picotool_DIR ${picotool_HINT})
 endif()
 
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
+
+# Module settings from the Makefile.
+set(MOD VL53L7CX)
+set(ARCH armv7emsp)  # armv7m with single precision float
+option(LINK_RUNTIME "Link runtime libs into native mpy (dynruntime-cpp.mk LINK_RUNTIME)" OFF)
+set(MPY_EXTERN_SYM_FILE "" CACHE FILEPATH "Path to extern symbol file for mpy_ld (--externs)")
+set(ARCH_FLAGS "" CACHE STRING "Optional architecture flags for mpy_ld (--arch-flags)")
+
+message(STATUS "PICO_SDK_PATH = ${PICO_SDK_PATH}")
+message(STATUS "MPY_DIR = ${MPY_DIR}")
+message(STATUS "MPY_EXTERN_SYM_FILE = ${MPY_EXTERN_SYM_FILE}")
 
 # Must be included before project() so the Pico SDK toolchain file is applied
 # and CMake selects arm-none-eabi-gcc/g++ during the project() call.
@@ -25,18 +42,6 @@ project(VL53L7CX_dynruntime C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS OFF)
-
-set(MPY_DIR "${USERHOME}/documents/robotics/micropython-v1.28.0" CACHE PATH "Path to MicroPython source tree")
-
-# Module settings from the Makefile.
-set(MOD VL53L7CX)
-set(ARCH armv7emsp)  # armv7m with single precision float
-option(LINK_RUNTIME "Link runtime libs into native mpy (dynruntime-cpp.mk LINK_RUNTIME)" OFF)
-set(MPY_EXTERN_SYM_FILE "" CACHE FILEPATH "Path to extern symbol file for mpy_ld (--externs)")
-set(ARCH_FLAGS "" CACHE STRING "Optional architecture flags for mpy_ld (--arch-flags)")
-
-message(STATUS "PICO_SDK_PATH=${PICO_SDK_PATH}")
-message(STATUS "MPY_DIR=${MPY_DIR}")
 
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -78,6 +83,8 @@ endif()
 
 set(MODULE_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/../MPY_wrapper.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../vl53l7cx_api.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../vl53l7cx_platform.cpp"
 )
 
 # Optional Python module sources in this folder (*.py).
@@ -160,21 +167,18 @@ set(MPY_LD_HW_DEPENDS)
 
 # Pull Pico SDK include paths/defines into dynruntime compilation.
 if(TARGET pico_stdlib)
-#        target_include_directories(${MOD}_obj PRIVATE
-#                $<TARGET_PROPERTY:pico_stdlib,INTERFACE_INCLUDE_DIRECTORIES>)
-#        target_compile_definitions(${MOD}_obj PRIVATE
-#                $<TARGET_PROPERTY:pico_stdlib,INTERFACE_COMPILE_DEFINITIONS>)
+#        target_link_libraries(${MOD}_obj PRIVATE pico_stdlib)
 endif()
-if(TARGET hardware_gpio)
-#        target_include_directories(${MOD}_obj PRIVATE
-#                $<TARGET_PROPERTY:hardware_gpio,INTERFACE_INCLUDE_DIRECTORIES>)
-#        target_compile_definitions(${MOD}_obj PRIVATE
-#                $<TARGET_PROPERTY:hardware_gpio,INTERFACE_COMPILE_DEFINITIONS>)
-#        target_link_libraries(${MOD}_obj PRIVATE hardware_gpio)
-endif()
-if(TARGET hardware_i2c)
-#        target_link_libraries(${MOD}_obj PRIVATE hardware_i2c)
-endif()
+target_include_directories(${MOD}_obj PRIVATE
+        $<TARGET_PROPERTY:pico_stdlib,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:hardware_gpio,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:hardware_i2c,INTERFACE_INCLUDE_DIRECTORIES>)
+
+target_compile_definitions(${MOD}_obj PRIVATE
+        $<TARGET_PROPERTY:pico_stdlib,INTERFACE_COMPILE_DEFINITIONS>
+        $<TARGET_PROPERTY:hardware_gpio,INTERFACE_COMPILE_DEFINITIONS>
+        $<TARGET_PROPERTY:hardware_i2c,INTERFACE_COMPILE_DEFINITIONS>)
+
 
 # Compile any optional .py sources to .mpy.
 set(PY_MPY_FILES)
