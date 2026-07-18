@@ -95,7 +95,7 @@ uint8_t VL53L7CX::WrMulti(
 #endif
 
     if (status != 0)
-        perror("WrMulti failed\n");
+        perror("VL53L7CX::WrMulti failed %d\n", status);
     return status;
 }
 
@@ -118,7 +118,7 @@ uint8_t VL53L7CX::RdMulti(
         status |= i2c_read_blocking_until(p_platform->dev_i2c, addr, p_values, size, false, TIMEOUT) != size;
 
     if (status != 0)
-        perror("RdMulti failed %d/%d\n", status, size);
+        perror("VL53L7CX::RdMulti failed %d/%d\n", status, size);
     return status;
 }
 

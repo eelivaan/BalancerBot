@@ -82,7 +82,7 @@ if(ARCH_FLAGS)
 endif()
 
 set(MODULE_SOURCES
-        "${CMAKE_CURRENT_LIST_DIR}/../MPY_wrapper.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/dynruntime-module.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../vl53l7cx_api.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../vl53l7cx_platform.cpp"
 )

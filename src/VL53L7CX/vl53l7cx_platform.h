@@ -55,9 +55,19 @@
 
 typedef i2c_inst_t TwoWire;
 
-// print error message
-#define perror(...) fprintf(stderr, __VA_ARGS__)
+// print to stdout
+#define print(...) mp_printf(&mp_plat_print, __VA_ARGS__)
 
+// print error message
+#define perror(...)     \
+    print("Error: ");   \
+    print(__VA_ARGS__); \
+    print("\n");
+
+/**
+ * @brief Init I2C with given block and pins
+ * @return static i2c instance
+ */
 static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
 {
     i2c_inst_t *i2c = (id == 1) ? i2c1 : i2c0;
@@ -71,7 +81,9 @@ static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
     return i2c;
 }
 
-// Scan the standard 7-bit address range used by MicroPython's i2c.scan().
+/**
+ * @brief Scan the standard 7-bit address range similar to MicroPython's i2c.scan()
+ */
 static std::vector<uint8_t> i2c_scan(int id, uint32_t timeout_us = 2000)
 {
     std::vector<uint8_t> found;
@@ -87,14 +99,14 @@ static std::vector<uint8_t> i2c_scan(int id, uint32_t timeout_us = 2000)
         }
     }
 
-    printf("I2C devices found: [");
+    print("I2C devices found: [");
     for (size_t i = 0; i < found.size(); ++i)
     {
-        printf("0x%02X", found[i]);
+        print("0x%02X", found[i]);
         if (i + 1 < found.size())
-            printf(", ");
+            print(", ");
     }
-    printf("]\n");
+    print("]\n");
     return found;
 }
 

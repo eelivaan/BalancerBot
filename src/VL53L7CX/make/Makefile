@@ -12,7 +12,7 @@ $(info PICO_SDK_PATH=$(PICO_SDK_PATH))
 MOD = VL53L7CX
 
 # Source files (.c or .py)
-SRC = ../MPY_wrapper.cpp ../vl53l7cx_api.cpp ../vl53l7cx_platform.cpp
+SRC = ../cmake/dynruntime-module.cpp ../vl53l7cx_api.cpp ../vl53l7cx_platform.cpp
 
 # armv7m with single precision float
 ARCH = armv7emsp
