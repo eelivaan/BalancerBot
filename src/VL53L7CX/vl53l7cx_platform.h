@@ -64,6 +64,23 @@ typedef i2c_inst_t TwoWire;
     print(__VA_ARGS__); \
     print("\n");
 
+/**
+ * @brief Init I2C with given block and pins
+ * @return static i2c instance
+ */
+static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
+{
+    i2c_inst_t *i2c = (id == 1) ? i2c1 : i2c0;
+    // I2C Initialisation. Using it at 400Khz.
+    i2c_init(i2c, 400 * 1000);
+
+    gpio_set_function(SDA_gpio, GPIO_FUNC_I2C);
+    gpio_set_function(SCL_gpio, GPIO_FUNC_I2C);
+    gpio_pull_up(SDA_gpio);
+    gpio_pull_up(SCL_gpio);
+    return i2c;
+}
+
 #if 0
 /**
  * @brief Scan the standard 7-bit address range similar to MicroPython's i2c.scan()

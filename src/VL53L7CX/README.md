@@ -5,7 +5,7 @@ Custom Micropython module for the VL53L7CX 8x8 time-of-flight sensor
 Three different approaches to deploy: 
 
 ## Freezing into Micropython firmware
-Uses ```module.*``` files and make fragments at this directory.
+Uses ```module.*``` files, ```micropython.cmake``` and ```micropython.mk``` from this directory.
 1. Run ```freeze/copy-module.bat``` to copy the module into micropython tree
 2. Build micropython:
 
