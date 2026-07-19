@@ -40,6 +40,7 @@
 #include "vl53l7cx_class.h"
 #include "vl53l7cx_buffers.h"
 
+#if 0
 uint8_t VL53L7CX::print_ranging_data(FILE *stream)
 {
     VL53L7CX_ResultsData results;
@@ -61,6 +62,7 @@ uint8_t VL53L7CX::print_ranging_data(FILE *stream)
     }
     return status;
 }
+#endif
 
 /**
  * @brief Inner function, not available outside this file. This function is used

@@ -40,13 +40,13 @@
 #pragma once
 
 #include <stdint.h>
-#include <string.h>
-#include <vector>
-#include <stdio.h>
 #include "vl53l7cx_platform_config.h"
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
+
+// Include MicroPython API
+#include "py/runtime.h"
 
 // What's the meaning of this value in Pico?
 #define DEFAULT_I2C_BUFFER_LEN 32
@@ -64,23 +64,7 @@ typedef i2c_inst_t TwoWire;
     print(__VA_ARGS__); \
     print("\n");
 
-/**
- * @brief Init I2C with given block and pins
- * @return static i2c instance
- */
-static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
-{
-    i2c_inst_t *i2c = (id == 1) ? i2c1 : i2c0;
-    // I2C Initialisation. Using it at 400Khz.
-    i2c_init(i2c, 400 * 1000);
-
-    gpio_set_function(SDA_gpio, GPIO_FUNC_I2C);
-    gpio_set_function(SCL_gpio, GPIO_FUNC_I2C);
-    gpio_pull_up(SDA_gpio);
-    gpio_pull_up(SCL_gpio);
-    return i2c;
-}
-
+#if 0
 /**
  * @brief Scan the standard 7-bit address range similar to MicroPython's i2c.scan()
  */
@@ -109,6 +93,7 @@ static std::vector<uint8_t> i2c_scan(int id, uint32_t timeout_us = 2000)
     print("]\n");
     return found;
 }
+#endif
 
 /**
  * @brief Structure VL53L7CX_Platform needs to be filled by the customer,

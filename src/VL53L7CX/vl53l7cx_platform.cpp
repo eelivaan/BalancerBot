@@ -87,7 +87,7 @@ uint8_t VL53L7CX::WrMulti(
         buffer[0] = (uint8_t)((RegisterAddress + i) >> 8);
         buffer[1] = (uint8_t)((RegisterAddress + i) & 0xFF);
         status |= i2c_write_burst_blocking(p_platform->dev_i2c, addr, buffer, 2) != 2;
-        status |= i2c_write_blocking_until(p_platform->dev_i2c, addr, p_values + i, current_write_size, false, TIMEOUT) != current_write_size;
+        status |= i2c_write_blocking_until(p_platform->dev_i2c, addr, p_values + i, current_write_size, false, TIMEOUT) != (int)current_write_size;
         if (status != 0)
             break;
         i += current_write_size;
@@ -115,7 +115,7 @@ uint8_t VL53L7CX::RdMulti(
     status |= i2c_write_blocking_until(p_platform->dev_i2c, addr, buffer, 2, true, TIMEOUT) != 2;
 
     if (status == 0)
-        status |= i2c_read_blocking_until(p_platform->dev_i2c, addr, p_values, size, false, TIMEOUT) != size;
+        status |= i2c_read_blocking_until(p_platform->dev_i2c, addr, p_values, size, false, TIMEOUT) != (int)size;
 
     if (status != 0)
         perror("VL53L7CX::RdMulti failed %d/%d\n", status, size);

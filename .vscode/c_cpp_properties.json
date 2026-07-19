@@ -3,7 +3,8 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "../micropython-v1.28.0/"
             ],
             "defines": [
                 "_DEBUG",

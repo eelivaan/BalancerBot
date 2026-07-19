@@ -60,7 +60,12 @@ public:
      * @param[in] lpn_pin pin to be used as component LPn
      * @param[in] i2c_rst_pin pin to be used as component I2C_RST
      */
-    VL53L7CX(TwoWire *i2c, int lpn_pin = -1, int i2c_rst_pin = -1)
+    VL53L7CX(TwoWire *i2c = nullptr, int lpn_pin = -1, int i2c_rst_pin = -1)
+    {
+        configure(i2c, lpn_pin, i2c_rst_pin);
+    }
+
+    void configure(TwoWire *i2c, int lpn_pin = -1, int i2c_rst_pin = -1)
     {
         memset((void *)&_dev, 0x0, sizeof(VL53L7CX_Configuration));
         _dev.platform.address = VL53L7CX_DEFAULT_I2C_ADDRESS;
@@ -72,7 +77,9 @@ public:
 
     /** Destructor
      */
-    virtual ~VL53L7CX() {}
+    virtual ~VL53L7CX()
+    {
+    }
 
     virtual int begin()
     {
@@ -288,7 +295,7 @@ public:
      * Output last ranging data to the given stream in format |d1|d2|d3|.
      * Invalid samples are marked with 0.
      */
-    uint8_t print_ranging_data(FILE *stream);
+    // uint8_t print_ranging_data(FILE *stream);
 
     /**
      * @brief This function gets the current resolution (4x4 or 8x8).
