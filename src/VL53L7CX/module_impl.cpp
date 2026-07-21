@@ -8,10 +8,8 @@
 extern "C"
 {
 #include "module.h"
-// machine_i2c_type
-#include "extmod/modmachine.h"
-// Include VL53L7CX API
-#include "vl53l7cx_class.h"
+#include "extmod/modmachine.h" // machine_i2c_type
+#include "vl53l7cx_class.h"    // Include VL53L7CX API
 
 // Raise python RuntimeError with printf style parameters
 #define raise_RuntimeError(...)                                  \
@@ -49,36 +47,37 @@ extern "C"
     } mp_obj_VL53L7CX_t;
 
     /**
-     * Constructor VL53L7CX(i2c, lpn_pin[, i2c_rst_pin])
+     * Constructor VL53L7CX(i2c: machine.I2C, lpn_pin: Int, i2c_rst_pin: Int = -1)
      * n_args: number of positional arguments
      * n_kw: number of keyword arguments
      * args: array of positional arguments
      */
     mp_obj_t VL53L7CX_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args)
     {
-        // check arguments and initialize VL53L7CX object
+        // check arguments
         mp_arg_check_num(n_args, n_kw, 2, 3, false);
-
-        mp_obj_VL53L7CX_t *self = mp_obj_malloc(mp_obj_VL53L7CX_t, type);
-        self->destroyed = false;
-        self->is_ranging = false;
 
         if (!mp_obj_is_type(args[0], &machine_i2c_type))
         {
-            mp_raise_TypeError(MP_ERROR_TEXT("VL53L7CX.__init__() expected machine.I2C"));
+            mp_raise_TypeError(MP_ERROR_TEXT("VL53L7CX() expected machine.I2C"));
         }
+
+        // initialize VL53L7CX python object
+        mp_obj_VL53L7CX_t *self = mp_obj_malloc(mp_obj_VL53L7CX_t, type);
+        self->destroyed = false;
+        self->is_ranging = false;
 
         // read arguments
         rp2_machine_i2c_obj_t *i2c = (rp2_machine_i2c_obj_t *)MP_OBJ_TO_PTR(args[0]);
         const int LPN_PIN = mp_obj_get_int(args[1]);
         const int I2C_RST_PIN = (n_args > 2) ? mp_obj_get_int(args[2]) : -1;
 
-        print("VL53L7CX configure with i2c_inst=%d, SDA=%d, SCL=%d, LPN=%d, I2C_RST=%d",
+        print("VL53L7CX init with i2c_inst=%d, SDA=%d, SCL=%d, LPN=%d, I2C_RST=%d",
               i2c->i2c_id, i2c->sda, i2c->scl, LPN_PIN, I2C_RST_PIN);
 
         // initialize the sensor
         int r = VL53L7CX_STATUS_OK;
-        self->dev.configure(I2C(i2c->i2c_id, i2c->sda, i2c->scl), LPN_PIN, I2C_RST_PIN);
+        self->dev.reconstruct(i2c->i2c_inst, LPN_PIN, I2C_RST_PIN);
 
         r = self->dev.begin();
         if (r != VL53L7CX_STATUS_OK)
@@ -97,12 +96,15 @@ extern "C"
     // VL53L7CX object to str
     void VL53L7CX_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
     {
-        mp_obj_VL53L7CX_t *self = MP_OBJ_TO_PTR(self_in);
+        mp_obj_VL53L7CX_t *self = (mp_obj_VL53L7CX_t *)MP_OBJ_TO_PTR(self_in);
         uint8_t resolution, frequency;
         self->dev.vl53l7cx_get_resolution(&resolution);
         self->dev.vl53l7cx_get_ranging_frequency_hz(&frequency);
-        mp_printf(print, "VL53L7CX Time-of-flight sensor: res=%s f=%u\n",
-                  (resolution == VL53L7CX_RESOLUTION_8X8) ? "8x8" : "4x4", frequency);
+        mp_printf(print, "VL53L7CX Time-of-flight sensor:\n"
+                         "ranging: %s res: %s freq: %u Hz\n",
+                  (self->is_ranging) ? "True" : "False",
+                  (resolution == VL53L7CX_RESOLUTION_8X8) ? "8x8" : "4x4",
+                  frequency);
     }
 
     // VL53L7CX.test_print(message)
@@ -133,7 +135,7 @@ extern "C"
     }
 
     /**
-     * VL53L7CX.configure(resolution, ranging_freq) -> int
+     * VL53L7CX.configure(resolution: str, ranging_freq: int) -> int
      * @param resolution : "8x8" or "4x4"
      * @param ranging_freq : The ranging frequency in Hz
      * - For 4x4, min and max allowed values are : [1;60]
@@ -142,6 +144,7 @@ extern "C"
      */
     mp_obj_t VL53L7CX_configure(mp_obj_t self_in, mp_obj_t resolution, mp_obj_t ranging_freq)
     {
+        mp_obj_VL53L7CX_t *self = (mp_obj_VL53L7CX_t *)MP_OBJ_TO_PTR(self_in);
         uint8_t r = VL53L7CX_STATUS_OK;
 
         const uint8_t res = equals_const(resolution, 4x4) ? VL53L7CX_RESOLUTION_4X4 : VL53L7CX_RESOLUTION_8X8;
@@ -168,7 +171,7 @@ extern "C"
             if (r == VL53L7CX_STATUS_OK)
                 self->is_ranging = true;
             else
-                perror("vl53l7cx_start_ranging() status %u", r);
+                perror("vl53l7cx->start_ranging() status %u", r);
         }
         return mp_obj_new_int(r);
     }
@@ -187,7 +190,7 @@ extern "C"
             if (r == VL53L7CX_STATUS_OK)
                 self->is_ranging = false;
             else
-                perror("vl53l7cx_stop_ranging() status %u", r);
+                perror("vl53l7cx->stop_ranging() status %u", r);
         }
         return mp_obj_new_int(r);
     }
@@ -202,16 +205,46 @@ extern "C"
         uint8_t isReady = 0;
         uint8_t status = self->dev.vl53l7cx_check_data_ready(&isReady);
         if (status != VL53L7CX_STATUS_OK)
-            perror("vl53l7cx_check_data_ready() status %u", status);
+            perror("vl53l7cx->check_data_ready() status %u", status);
         return mp_obj_new_bool(isReady);
     }
 
     /**
-     * VL53L7CX.get_ranging_data() ->
-     * @returns None
+     * VL53L7CX.get_ranging_data() -> list[Int|None]
+     * @returns A list of distance measurements in mm or None on failure
      */
     mp_obj_t VL53L7CX_get_ranging_data(mp_obj_t self_in)
     {
+        mp_obj_VL53L7CX_t *self = (mp_obj_VL53L7CX_t *)MP_OBJ_TO_PTR(self_in);
+        if (self->is_ranging)
+        {
+            VL53L7CX_ResultsData results;
+            uint8_t status = self->dev.vl53l7cx_get_ranging_data(&results);
+            if (status == VL53L7CX_STATUS_OK)
+            {
+                mp_obj_t distance_array[VL53L7CX_RESOLUTION_8X8];
+                uint8_t num_zones;
+                status = self->dev.vl53l7cx_get_resolution(&num_zones);
+                if (status != VL53L7CX_STATUS_OK)
+                {
+                    perror("vl53l7cx->get_resolution() status %u", status);
+                    num_zones = VL53L7CX_RESOLUTION_8X8; // fallback to 8x8
+                }
+                // fill array of int objects with distance measurements or None if no target detected
+                for (size_t i = 0; i < num_zones; i++)
+                {
+                    if (results.nb_target_detected[i] > 0)
+                        distance_array[i] = mp_obj_new_int(results.distance_mm[i]);
+                    else
+                        distance_array[i] = mp_const_none;
+                }
+                return mp_obj_new_list(num_zones, distance_array);
+            }
+            else
+            {
+                perror("vl53l7cx->get_ranging_data() status %u", status);
+            }
+        }
         return mp_const_none;
     }
 }

@@ -7,11 +7,11 @@
 // VL53L7CX object methods
 static MP_DEFINE_CONST_FUN_OBJ_2(VL53L7CX_test_print_obj, VL53L7CX_test_print);
 static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_destroy_obj, VL53L7CX_destroy);
-static MP_DEFINE_CONST_FUN_OBJ_3(VL53L7CX_destroy_obj, VL53L7CX_configure);
-static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_destroy_obj, VL53L7CX_start_ranging);
-static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_destroy_obj, VL53L7CX_stop_ranging);
-static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_destroy_obj, VL53L7CX_is_data_ready);
-static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_destroy_obj, VL53L7CX_get_ranging_data);
+static MP_DEFINE_CONST_FUN_OBJ_3(VL53L7CX_configure_obj, VL53L7CX_configure);
+static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_start_ranging_obj, VL53L7CX_start_ranging);
+static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_stop_ranging_obj, VL53L7CX_stop_ranging);
+static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_is_data_ready_obj, VL53L7CX_is_data_ready);
+static MP_DEFINE_CONST_FUN_OBJ_1(VL53L7CX_get_ranging_data_obj, VL53L7CX_get_ranging_data);
 
 // VL53L7CX object locals dict
 static const mp_rom_map_elem_t VL53L7CX_locals_dict_table[] = {
@@ -19,6 +19,16 @@ static const mp_rom_map_elem_t VL53L7CX_locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_test_print), MP_ROM_PTR(&VL53L7CX_test_print_obj)},
     // VL53L7CX.destroy()
     {MP_ROM_QSTR(MP_QSTR_destroy), MP_ROM_PTR(&VL53L7CX_destroy_obj)},
+    // VL53L7CX.configure(...)
+    {MP_ROM_QSTR(MP_QSTR_configure), MP_ROM_PTR(&VL53L7CX_configure_obj)},
+    // VL53L7CX.start_ranging()
+    {MP_ROM_QSTR(MP_QSTR_start_ranging), MP_ROM_PTR(&VL53L7CX_start_ranging_obj)},
+    // VL53L7CX.stop_ranging()
+    {MP_ROM_QSTR(MP_QSTR_stop_ranging), MP_ROM_PTR(&VL53L7CX_stop_ranging_obj)},
+    // VL53L7CX.is_data_ready()
+    {MP_ROM_QSTR(MP_QSTR_is_data_ready), MP_ROM_PTR(&VL53L7CX_is_data_ready_obj)},
+    // VL53L7CX.get_ranging_data()
+    {MP_ROM_QSTR(MP_QSTR_get_ranging_data), MP_ROM_PTR(&VL53L7CX_get_ranging_data_obj)},
 };
 static MP_DEFINE_CONST_DICT(VL53L7CX_locals_dict, VL53L7CX_locals_dict_table);
 

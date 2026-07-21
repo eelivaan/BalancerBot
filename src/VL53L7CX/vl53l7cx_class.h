@@ -60,12 +60,15 @@ public:
      * @param[in] lpn_pin pin to be used as component LPn
      * @param[in] i2c_rst_pin pin to be used as component I2C_RST
      */
-    VL53L7CX(TwoWire *i2c = nullptr, int lpn_pin = -1, int i2c_rst_pin = -1)
+    VL53L7CX(TwoWire *i2c = i2c0, int lpn_pin = -1, int i2c_rst_pin = -1)
     {
-        configure(i2c, lpn_pin, i2c_rst_pin);
+        reconstruct(i2c, lpn_pin, i2c_rst_pin);
     }
 
-    void configure(TwoWire *i2c, int lpn_pin = -1, int i2c_rst_pin = -1)
+    /**
+     * Re-initialize the VL53L7CX instance
+     */
+    void reconstruct(TwoWire *i2c, int lpn_pin = -1, int i2c_rst_pin = -1)
     {
         memset((void *)&_dev, 0x0, sizeof(VL53L7CX_Configuration));
         _dev.platform.address = VL53L7CX_DEFAULT_I2C_ADDRESS;

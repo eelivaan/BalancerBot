@@ -2,7 +2,7 @@ VL53L7CX_MOD_DIR := $(USERMOD_DIR)
 
 # Add our source files to the respective variables.
 SRC_USERMOD += $(VL53L7CX_MOD_DIR)/module.c
-SRC_USERMOD_CXX += $(VL53L7CX_MOD_DIR)/module.cpp
+SRC_USERMOD_CXX += $(VL53L7CX_MOD_DIR)/module_impl.cpp
 SRC_USERMOD_CXX += $(VL53L7CX_MOD_DIR)/vl53l7cx_api.cpp
 SRC_USERMOD_CXX += $(VL53L7CX_MOD_DIR)/vl53l7cx_platform.cpp
 

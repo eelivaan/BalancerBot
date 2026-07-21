@@ -39,7 +39,6 @@
 #define _VL53L7CX_PLATFORM_H_
 #pragma once
 
-#include <stdint.h>
 #include "vl53l7cx_platform_config.h"
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
@@ -64,6 +63,7 @@ typedef i2c_inst_t TwoWire;
     print(__VA_ARGS__); \
     print("\n");
 
+#if 0
 /**
  * @brief Init I2C with given block and pins
  * @return static i2c instance
@@ -80,6 +80,7 @@ static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
     gpio_pull_up(SCL_gpio);
     return i2c;
 }
+#endif
 
 #if 0
 /**
