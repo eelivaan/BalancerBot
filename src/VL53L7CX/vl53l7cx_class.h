@@ -127,7 +127,7 @@ public:
         {
             gpio_put(_dev.platform.lpn_pin, 1);
         }
-        sleep_ms(10);
+        WaitMs(&(_dev.platform), 10);
     }
 
     /**
@@ -140,7 +140,7 @@ public:
         {
             gpio_put(_dev.platform.lpn_pin, 0);
         }
-        sleep_ms(10);
+        WaitMs(&(_dev.platform), 10);
     }
 
     /**
@@ -152,14 +152,15 @@ public:
         if (_dev.platform.i2c_rst_pin >= 0)
         {
             gpio_put(_dev.platform.i2c_rst_pin, 0);
-            sleep_ms(10);
+            WaitMs(&(_dev.platform), 10);
             gpio_put(_dev.platform.i2c_rst_pin, 1);
-            sleep_ms(10);
+            WaitMs(&(_dev.platform), 10);
             gpio_put(_dev.platform.i2c_rst_pin, 0);
-            sleep_ms(10);
+            WaitMs(&(_dev.platform), 10);
         }
     }
 
+#if 0
     /**
      * @brief  Initialize the sensor
      * @param (uint8_t) addr : New I2C address.
@@ -200,6 +201,7 @@ public:
 
         return (int)status;
     }
+#endif
 
     /* vl53l7cx_api.h */
     /**

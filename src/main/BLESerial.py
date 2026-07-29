@@ -1,6 +1,8 @@
+"""
+Serial communication interface over Bluetooth Low Energy
+"""
 import bluetooth
 import struct
-import time
 
 class BLESerial:
     _IRQ_CENTRAL_CONNECT = 1

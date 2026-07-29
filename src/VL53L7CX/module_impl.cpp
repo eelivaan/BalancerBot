@@ -14,8 +14,8 @@ extern "C"
 // Raise python RuntimeError with printf style parameters
 #define raise_RuntimeError(...)                                  \
     {                                                            \
-        char msg[50];                                            \
-        snprintf(msg, 50, __VA_ARGS__);                          \
+        char msg[100];                                           \
+        snprintf(msg, 99, __VA_ARGS__);                          \
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT(msg)); \
     }
 
@@ -69,23 +69,44 @@ extern "C"
 
         // read arguments
         rp2_machine_i2c_obj_t *i2c = (rp2_machine_i2c_obj_t *)MP_OBJ_TO_PTR(args[0]);
-        const int LPN_PIN = mp_obj_get_int(args[1]);
-        const int I2C_RST_PIN = (n_args > 2) ? mp_obj_get_int(args[2]) : -1;
+        // int i2c_id = 0;
+        // int i2c_sda = 20;
+        // int i2c_scl = 21;
+        int LPN_PIN = mp_obj_get_int(args[1]);
+        int I2C_RST_PIN = (n_args > 2) ? mp_obj_get_int(args[2]) : -1;
 
-        print("VL53L7CX init with i2c_inst=%d, SDA=%d, SCL=%d, LPN=%d, I2C_RST=%d",
+        print("VL53L7CX init with i2c_inst=%d, SDA=%d, SCL=%d, LPN=%d, I2C_RST=%d\n",
               i2c->i2c_id, i2c->sda, i2c->scl, LPN_PIN, I2C_RST_PIN);
 
         // initialize the sensor
         int r = VL53L7CX_STATUS_OK;
-        self->dev.reconstruct(i2c->i2c_inst, LPN_PIN, I2C_RST_PIN);
+        // self->dev.reconstruct(myI2C(i2c_id, i2c_sda, i2c_scl), LPN_PIN, I2C_RST_PIN);
+        self->dev.reconstruct((i2c->i2c_id == 1 ? i2c1 : i2c0), LPN_PIN, I2C_RST_PIN);
 
         r = self->dev.begin();
         if (r != VL53L7CX_STATUS_OK)
             raise_RuntimeError("VL53L7CX->begin() failed with status %d", r);
 
-        r = self->dev.init_sensor();
+        // Reset the sensor by toggling the LPN pin
+        self->dev.vl53l7cx_off();
+        self->dev.vl53l7cx_on();
+
+        uint8_t isAlive = 0;
+        r = self->dev.vl53l7cx_is_alive(&isAlive);
+        if (isAlive && r == VL53L7CX_STATUS_OK)
+            print("Sensor alive\n");
+        else
+            perror("Error: sensor not alive\n");
+
+        // Init VL53L7CX sensor
+        r = self->dev.vl53l7cx_init();
         if (r != VL53L7CX_STATUS_OK)
-            raise_RuntimeError("VL53L7CX->init_sensor() failed with status %d", r);
+            raise_RuntimeError("VL53L7CX->vl53l7cx_init() failed with status %d", r);
+
+        // r = self->dev.init_sensor();
+        //  print("VL53L7CX->init_sensor(): %d\n", r);
+        //    if (r != VL53L7CX_STATUS_OK)
+        //        raise_RuntimeError("VL53L7CX->init_sensor() failed with status %d", r);
 
         r = self->dev.vl53l7cx_set_resolution(VL53L7CX_RESOLUTION_8X8);
         r = self->dev.vl53l7cx_set_ranging_frequency_hz(10);
@@ -100,8 +121,7 @@ extern "C"
         uint8_t resolution, frequency;
         self->dev.vl53l7cx_get_resolution(&resolution);
         self->dev.vl53l7cx_get_ranging_frequency_hz(&frequency);
-        mp_printf(print, "VL53L7CX Time-of-flight sensor:\n"
-                         "ranging: %s res: %s freq: %u Hz\n",
+        mp_printf(print, "VL53L7CX Time-of-flight sensor: ranging: %s, res: %s, freq: %u Hz",
                   (self->is_ranging) ? "True" : "False",
                   (resolution == VL53L7CX_RESOLUTION_8X8) ? "8x8" : "4x4",
                   frequency);

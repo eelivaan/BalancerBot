@@ -58,17 +58,14 @@ typedef i2c_inst_t TwoWire;
 #define print(...) mp_printf(&mp_plat_print, __VA_ARGS__)
 
 // print error message
-#define perror(...)     \
-    print("Error: ");   \
-    print(__VA_ARGS__); \
-    print("\n");
+#define perror(...) mp_printf(&mp_plat_print, __VA_ARGS__)
 
-#if 0
+#if 1
 /**
  * @brief Init I2C with given block and pins
  * @return static i2c instance
  */
-static TwoWire *I2C(int id, int SDA_gpio, int SCL_gpio)
+inline TwoWire *myI2C(int id, int SDA_gpio, int SCL_gpio)
 {
     i2c_inst_t *i2c = (id == 1) ? i2c1 : i2c0;
     // I2C Initialisation. Using it at 400Khz.

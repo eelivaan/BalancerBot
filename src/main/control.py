@@ -1,3 +1,6 @@
+"""
+Control algorithms
+"""
 
 def limit(value, max_offset, center=0.0):
     return min(max(value, center-max_offset), center+max_offset)

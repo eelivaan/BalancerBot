@@ -1,3 +1,6 @@
+"""
+Asynchronous thread for BLE serial communication on laptop side
+"""
 import asyncio
 import threading
 from bleak import BleakScanner, BleakClient

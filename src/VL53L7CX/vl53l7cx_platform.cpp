@@ -39,6 +39,8 @@ extern "C"
 {
 #include "vl53l7cx_class.h"
 
+#include "py/mphal.h" // mp_hal_delay_ms()
+
 #define TIMEOUT make_timeout_time_ms(2000)
 
     uint8_t VL53L7CX::RdByte(
@@ -144,7 +146,7 @@ extern "C"
         uint32_t TimeMs)
     {
         (void)p_platform;
-        sleep_ms(TimeMs);
+        mp_hal_delay_ms(TimeMs);
 
         return 0;
     }
