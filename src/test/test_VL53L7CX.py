@@ -7,12 +7,12 @@ led.on()
 
 print("led on")
 
-i2c0 = I2C(0, scl=Pin("GP21"), sda=Pin("GP20"), freq=400000)
+i2c0 = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
 print(i2c0)
 
 time.sleep_ms(100)
 
-sensor = VL53L7CX(i2c0, 19)
+sensor = VL53L7CX(i2c0, 8)
 
 sensor.test_print("hello")
 

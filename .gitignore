@@ -1,8 +1,8 @@
 costs.ods
 notes.md
-src/VL53L7CX/make/build
-src/VL53L7CX/cmake/*
-!src/VL53L7CX/cmake/CMakeLists.txt
-!src/VL53L7CX/cmake/pico_sdk_import.cmake
-!src/VL53L7CX/cmake/*.cpp
-!src/VL53L7CX/cmake/cleanup.bat
+src/VL53L7CX-api/make/build
+src/VL53L7CX-api/cmake/*
+!src/VL53L7CX-api/cmake/CMakeLists.txt
+!src/VL53L7CX-api/cmake/pico_sdk_import.cmake
+!src/VL53L7CX-api/cmake/*.cpp
+!src/VL53L7CX-api/cmake/cleanup.bat

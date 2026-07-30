@@ -3,7 +3,7 @@ Interface for the robot
 """
 from machine import Pin, ADC, PWM, I2C, Timer
 from icm20948 import QwiicIcm20948
-from VL53L4CX import VL53L4CX
+from VL53L7CX import VL53L7CX
 from BLESerial import BLESerial
 import json, math, time
 
@@ -11,6 +11,8 @@ def sign(x):
     return 0 if x == 0 else (1 if x > 0 else -1)
 
 class SlidingAverage:
+    """ Simple sliding average implementation """
+    
     def __init__(self, length: int) -> None:
         self.set(0.0, length)
 
@@ -63,16 +65,20 @@ class BalancerBot:
             #self.IMU = None
             self.quit_flag = True
 
-        # time-of-flight sensor
+        # 8x8 time-of-flight sensor
         self.ToF_i2c = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
-        addresses = self.ToF_i2c.scan()
-        print("I2C1 Scan result:", [hex(ad) for ad in addresses])
-        if len(addresses):
-            self.ToF_sensor = VL53L4CX(self.ToF_i2c)
-            self.ToF_sensor.distance_mode = 2  # long range
-            self.ToF_sensor.timing_budget = 50  # ms
-        else:
-            print("ToF I2C not found")
+        #addresses = self.ToF_i2c.scan()
+        #print("I2C1 Scan result:", [hex(ad) for ad in addresses])
+        #if len(addresses):
+        #    self.ToF_sensor = VL53L4CX(self.ToF_i2c)
+        #else:
+        #    print("ToF I2C not found")
+        #    self.ToF_sensor = None
+        try:
+            self.ToF_sensor = VL53L7CX(self.ToF_i2c, 8)
+            self.ToF_sensor.configure("4x4", 5)
+        except Exception as e:
+            print("Failed to init 8x8 VL53L7CX sensor: ", e)
             self.ToF_sensor = None
 
         # external button
@@ -144,12 +150,12 @@ class BalancerBot:
             return False
         
     def readToF(self):
-        if self.ToF_sensor and self.ToF_sensor.data_ready:
-            d = self.ToF_sensor.distance
-            self.ToF_sensor.clear_interrupt()
-            return d
-        else:
-            return None
+        """ Minimum observed distance in centimeters or None if no valid data """
+        if self.ToF_sensor and self.ToF_sensor.is_data_ready():
+            if depthimg := self.ToF_sensor.get_ranging_data():
+                d = depthimg[8]  # center pixel
+                return d/10.0 if d != None else None
+        return None
     
 
     def startBLE(self, ble_msg_callback):
@@ -239,6 +245,7 @@ class BalancerBot:
 
         if self.ToF_sensor:
             self.ToF_sensor.stop_ranging()
+            self.ToF_sensor.destroy()
 
         if self.ble:
             self.ble.deactivate()

@@ -6,7 +6,7 @@
         {
             "label": "Copy VL53L7CX Module",
             "type": "shell",
-            "command": "./src/VL53L7CX/freeze/copy-module.bat",
+            "command": "./src/VL53L7CX-api/freeze/copy-module.bat",
             "problemMatcher": []
         }
     ]

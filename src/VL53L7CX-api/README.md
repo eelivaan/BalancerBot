@@ -28,7 +28,7 @@ https://docs.micropython.org/en/latest/develop/cmodules.html
 ## Building mpy binary file with CMake
 Uses ```cmake/dynruntime-module.cpp``` as source.
 ```bash
-# inside src/VL53L7CX/cmake/
+# inside src/VL53L7CX-api/cmake/
 cmake .
 make
 ```
@@ -40,7 +40,7 @@ make
 ## Building mpy binary file with Make
 Uses ```cmake/dynruntime-module.cpp``` as source.
 ```bash
-# inside src/VL53L7CX/make/
+# inside src/VL53L7CX-api/make/
 make
 ```
 - ```dynruntime-cpp.mk```: added c++ support to ```micropython/py/dynruntime.mk```

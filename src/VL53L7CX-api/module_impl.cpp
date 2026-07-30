@@ -43,6 +43,7 @@ extern "C"
         mp_obj_base_t base;
         bool destroyed;
         bool is_ranging;
+        uint8_t resolution;
         VL53L7CX dev;
     } mp_obj_VL53L7CX_t;
 
@@ -69,9 +70,6 @@ extern "C"
 
         // read arguments
         rp2_machine_i2c_obj_t *i2c = (rp2_machine_i2c_obj_t *)MP_OBJ_TO_PTR(args[0]);
-        // int i2c_id = 0;
-        // int i2c_sda = 20;
-        // int i2c_scl = 21;
         int LPN_PIN = mp_obj_get_int(args[1]);
         int I2C_RST_PIN = (n_args > 2) ? mp_obj_get_int(args[2]) : -1;
 
@@ -80,7 +78,6 @@ extern "C"
 
         // initialize the sensor
         int r = VL53L7CX_STATUS_OK;
-        // self->dev.reconstruct(myI2C(i2c_id, i2c_sda, i2c_scl), LPN_PIN, I2C_RST_PIN);
         self->dev.reconstruct((i2c->i2c_id == 1 ? i2c1 : i2c0), LPN_PIN, I2C_RST_PIN);
 
         r = self->dev.begin();
@@ -94,21 +91,18 @@ extern "C"
         uint8_t isAlive = 0;
         r = self->dev.vl53l7cx_is_alive(&isAlive);
         if (isAlive && r == VL53L7CX_STATUS_OK)
-            print("Sensor alive\n");
+            print("VL53L7CX Sensor alive\n");
         else
-            perror("Error: sensor not alive\n");
+            perror("Error: VL53L7CX sensor not alive\n");
 
         // Init VL53L7CX sensor
         r = self->dev.vl53l7cx_init();
         if (r != VL53L7CX_STATUS_OK)
             raise_RuntimeError("VL53L7CX->vl53l7cx_init() failed with status %d", r);
 
-        // r = self->dev.init_sensor();
-        //  print("VL53L7CX->init_sensor(): %d\n", r);
-        //    if (r != VL53L7CX_STATUS_OK)
-        //        raise_RuntimeError("VL53L7CX->init_sensor() failed with status %d", r);
-
         r = self->dev.vl53l7cx_set_resolution(VL53L7CX_RESOLUTION_8X8);
+        self->resolution = VL53L7CX_RESOLUTION_8X8;
+
         r = self->dev.vl53l7cx_set_ranging_frequency_hz(10);
 
         return MP_OBJ_FROM_PTR(self);
@@ -167,11 +161,11 @@ extern "C"
         mp_obj_VL53L7CX_t *self = (mp_obj_VL53L7CX_t *)MP_OBJ_TO_PTR(self_in);
         uint8_t r = VL53L7CX_STATUS_OK;
 
-        const uint8_t res = equals_const(resolution, 4x4) ? VL53L7CX_RESOLUTION_4X4 : VL53L7CX_RESOLUTION_8X8;
-        r |= self->dev.vl53l7cx_set_resolution(res);
+        self->resolution = equals_const(resolution, 4x4) ? VL53L7CX_RESOLUTION_4X4 : VL53L7CX_RESOLUTION_8X8;
+        r |= self->dev.vl53l7cx_set_resolution(self->resolution);
 
         uint8_t freq = (uint8_t)mp_obj_get_int(ranging_freq);
-        freq = (res == VL53L7CX_RESOLUTION_4X4) ? clamp(freq, 1, 60) : clamp(freq, 1, 15);
+        freq = (self->resolution == VL53L7CX_RESOLUTION_4X4) ? clamp(freq, 1, 60) : clamp(freq, 1, 15);
         r |= self->dev.vl53l7cx_set_ranging_frequency_hz(freq);
 
         return mp_obj_new_int(r);
@@ -243,13 +237,7 @@ extern "C"
             if (status == VL53L7CX_STATUS_OK)
             {
                 mp_obj_t distance_array[VL53L7CX_RESOLUTION_8X8];
-                uint8_t num_zones;
-                status = self->dev.vl53l7cx_get_resolution(&num_zones);
-                if (status != VL53L7CX_STATUS_OK)
-                {
-                    perror("vl53l7cx->get_resolution() status %u", status);
-                    num_zones = VL53L7CX_RESOLUTION_8X8; // fallback to 8x8
-                }
+                const uint8_t num_zones = self->resolution;
                 // fill array of int objects with distance measurements or None if no target detected
                 for (size_t i = 0; i < num_zones; i++)
                 {
