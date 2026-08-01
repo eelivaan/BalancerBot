@@ -2,14 +2,52 @@ import json
 
 import tkinter as tk
 from tkinter import ttk
+import numpy as np
+import cv2
+from time import sleep
+from PIL import Image, ImageTk
 from ble_client import BLEThread
+
+
+def create_depthmap(data):
+    #data = np.rot90(data, k=-1)
+    R = 8 if len(data) == 64 else 4
+    data = data.reshape((R, R))
+
+    # Choose display range (clip outliers)
+    z_min, z_max = 1.0, 1500.0
+    normalized = np.clip((data - z_min) / (z_max - z_min), 0, 1)
+    # gamma correction
+    normalized = np.pow(normalized, 1.0/2.2)
+
+    # Apply colormap (Turbo is usually very readable)
+    color = (normalized * 255.0).astype(np.uint8)
+    #color = cv2.applyColorMap(color, cv2.COLORMAP_TURBO)
+
+    # Upscale so the 8x8 map is visible
+    scale = 60  # each cell becomes 60x60 pixels
+    big = cv2.resize(color, (R * scale, R * scale), interpolation=cv2.INTER_LINEAR)
+
+    # Optional: overlay raw depth values
+    for r in range(R):
+        for c in range(R):
+            text = str(int(data[r, c]))
+            x = c * scale + 6
+            y = r * scale + 24
+            cv2.putText(big, text, (x, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
+            
+    rgb = cv2.cvtColor(big, cv2.COLOR_GRAY2RGB)
+    pil_image = Image.fromarray(rgb)
+    return ImageTk.PhotoImage(image=pil_image)
+#end create_depthmap
 
 
 class RemoteControlUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Remote Control")
-        self.geometry("400x300")
+        self.geometry("500x500")
         self.configure(bg="#1e1e1e")
         self.focus_set()
         self.pressed_keys = set()
@@ -20,6 +58,11 @@ class RemoteControlUI(tk.Tk):
         font = ("Consolas", 11)
         self.text_label = ttk.Label(self, text="No connection", font=font, justify="left", anchor="w", width=70, foreground="#e0e0e0", background="#1e1e1e")
         self.text_label.pack(padx=10, pady=10)
+
+        self.depth_label = ttk.Label(self)
+        self.depth_label.pack(padx=10, pady=10)
+        self.depth_photo = create_depthmap(np.array(np.zeros(16)))
+        self.depth_label.config(image=self.depth_photo)
 
         self.motors_btn = ttk.Button(self, text="Enable motors", command=self.lift)
         self.motors_btn.pack(side="left", padx=10, pady=10, ipadx=5)
@@ -38,10 +81,13 @@ class RemoteControlUI(tk.Tk):
 
         self.target_heading = 0.0
 
+        ble_thread.send(json.dumps({'type': 'rc_start'}))
         self.tick()
 
     def destroy(self):
         super().destroy()
+        ble_thread.send(json.dumps({'type': 'rc_end'}))
+        sleep(1.5)
         ble_thread.stop()
 
     def key_down(self, event):
@@ -84,28 +130,23 @@ class RemoteControlUI(tk.Tk):
 
     def tick(self):
         if ble_thread.is_connected():
-            #if 'a' in self.pressed_keys:
-            #    self.turn(5.0)
-            #elif 'd' in self.pressed_keys:
-            #    self.turn(-5.0)
-
             while data := ble_thread.read():
                 if isinstance(data, str):
                     self.text_label.config(text=data)
-                else:
-                    text = f"Heading: {data['h']:.1f}°\n"
-                    text += f"Temperature: {data['t']:.2f}°C\n"
-                    text += f"Distance: {data['d']:.1f} cm\n"
-                    text += f"Motor Speed: {data['mt']:.3f}\n"
-                    text += f"Battery: {data['b']:.2f} V\n"
+                elif 'dimg' in data:
+                    # status texts
+                    text = f"Heading: {data['h']:.1f}° | Motor Speed: {data['mt']:.3f} | Battery: {data['b']:.2f} V\n"
                     self.text_label.config(text=text)
+                    # depth image
+                    self.depth_photo = create_depthmap(np.array([1500 if d == None else d for d in data['dimg']]))
+                    self.depth_label.config(image=self.depth_photo)
 
             if ble_thread.check_ack():
                 self.ok_label.pack(side="left", padx=10, pady=10, ipadx=5)
                 self.after(1000, lambda: self.ok_label.pack_forget())
         else:
             self.text_label.config(text="No connection")
-
+            
         self.after(100, self.tick)
 #end RemoteControlUI
 

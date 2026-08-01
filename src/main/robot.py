@@ -39,6 +39,8 @@ class SlidingAverage:
 
 
 class BalancerBot:
+    """ Software abstraction for the robot """
+
     def __init__(self, config_load_callback=None):
         self.led_builtin = Pin("LED", Pin.OUT)
         self.led_builtin.on()
@@ -55,7 +57,8 @@ class BalancerBot:
         self.servoR_PWM = PWM(Pin(self.config['right_motor_pin']), freq=50)
 
         # inertial motion unit
-        self.IMU_i2c = I2C(0, scl=Pin("GP21"), sda=Pin("GP20"), freq=400000)
+        self.IMU_i2c = I2C(0, scl=Pin(self.config['IMU_scl_pin']), 
+                              sda=Pin(self.config['IMU_sda_pin']), freq=400000)
         addresses = self.IMU_i2c.scan()
         print("I2C0 Scan result:", [hex(ad) for ad in addresses])
         if len(addresses):
@@ -66,7 +69,8 @@ class BalancerBot:
             self.quit_flag = True
 
         # 8x8 time-of-flight sensor
-        self.ToF_i2c = I2C(1, scl=Pin("GP7"), sda=Pin("GP6"), freq=400000)
+        self.ToF_i2c = I2C(1, scl=Pin(self.config['ToF_scl_pin']),
+                              sda=Pin(self.config['ToF_sda_pin']), freq=400000)
         #addresses = self.ToF_i2c.scan()
         #print("I2C1 Scan result:", [hex(ad) for ad in addresses])
         #if len(addresses):
@@ -75,27 +79,35 @@ class BalancerBot:
         #    print("ToF I2C not found")
         #    self.ToF_sensor = None
         try:
-            self.ToF_sensor = VL53L7CX(self.ToF_i2c, 8)
+            self.ToF_sensor = VL53L7CX(self.ToF_i2c, self.config['ToF_lpn_pin'])
             self.ToF_sensor.configure("4x4", 5)
         except Exception as e:
             print("Failed to init 8x8 VL53L7CX sensor: ", e)
             self.ToF_sensor = None
 
         # external button
-        self.button = Pin("GP22", Pin.IN, Pin.PULL_UP)
+        self.button = Pin(self.config['button_pin'], Pin.IN, Pin.PULL_UP)
         self.button_pressed_flag = False
 
         # BLE off by default
         self.ble = None
 
         self.heading = 0.0
+        self.travel = 0.0
+        self.angularv = 0.0
         self.speed = SlidingAverage(self.config['speed_filter'])
-        self.motors_enabled = False
+        self.pitch_angle = SlidingAverage(self.config['pitch_filter'])
+        self.pitch_deriv = SlidingAverage(self.config['gyro_filter'])
+        self.motors_enabled = True
+        self.motor_speed = 0.0
         self.quit_flag = False
         self.logfile = None
+        self.last_depth_measurement = []
+        self.RC_on = False
 
         self.last_ticks = time.ticks_ms()
         self.internal_time = 0
+    #end __init__
 
 
     def load_config(self):
@@ -130,33 +142,13 @@ class BalancerBot:
             self.quit_flag = True
 
     
-    def updateIMU(self):
-        if self.IMU and self.IMU.dataReady():
-            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
-            # track heading
-            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * (self.config['loop_interval'] / 1000.0)
-            self.heading = math.fmod(self.heading, 360.0)
-            # track time
-            self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
-            return True
-        return False
-    
-
     def startToF(self):
         if self.ToF_sensor:
             self.ToF_sensor.start_ranging()
             return True
         else:
             return False
-        
-    def readToF(self):
-        """ Minimum observed distance in centimeters or None if no valid data """
-        if self.ToF_sensor and self.ToF_sensor.is_data_ready():
-            if depthimg := self.ToF_sensor.get_ranging_data():
-                d = depthimg[8]  # center pixel
-                return d/10.0 if d != None else None
-        return None
-    
+            
 
     def startBLE(self, ble_msg_callback):
         self.ble = BLESerial(ble_msg_callback)
@@ -193,22 +185,6 @@ class BalancerBot:
         return self.internal_time
 
 
-    def measure_accel_with_time(self):
-        v = self.IMU.get_accel() # type: ignore
-        v['t'] = self.IMU_last_update_time
-        return v
-
-    def measure_gyro_with_time(self):
-        v = self.IMU.get_gyro() # type: ignore
-        v['t'] = self.IMU_last_update_time
-        return v
-
-    def measure_mag_with_time(self):
-        v = self.IMU.get_mag() # type: ignore
-        v['t'] = self.IMU_last_update_time
-        return v
-
-
     def motor_input(self, left_signal, right_signal):
         # motor control
         if self.motors_enabled:
@@ -217,19 +193,55 @@ class BalancerBot:
             pulse = sign(right_signal) * (self.config['motor_PWM_min'] + abs(right_signal) * 100)
             self.servoR_PWM.duty_ns(int((150 - pulse) * 10000))
             self.speed.add((left_signal + right_signal) / 2.0, self.config['speed_filter'])
+            self.motor_speed = (left_signal + right_signal) / 2
         else:
             self.servoL_PWM.duty_ns(0)
             self.servoR_PWM.duty_ns(0)
             self.speed.set(0.0)
+            self.motor_speed = 0.0
 
 
     def send_status(self, custom_data):
         if self.ble and self.ble.is_connected():
             bat = self.read_battery_voltage()
-            data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(),  # type: ignore
-                    't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat}  # type: ignore
-            data.update(custom_data)  # append custom data
+            if self.RC_on:
+                # send different data when remote controlling
+                data = {'h': self.heading, 'mt': self.speed.get(), 'b': bat, 'dimg': self.last_depth_measurement}
+            else:
+                data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(),  # type: ignore
+                        't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat,
+                        's': self.pitch_angle.get(), 'mt': self.speed.get()}
+                data.update(custom_data)  # append custom data
             self.ble.send(json.dumps(data))
+
+
+    def update(self, dt: float):
+        if self.IMU and self.IMU.dataReady():
+            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
+            # track heading
+            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * dt
+            self.heading = math.fmod(self.heading, 360.0)
+            # track time
+            self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
+
+        # sensor measurements
+        accel = self.IMU.get_accel()
+        gyro = self.IMU.get_gyro()
+        a = accel[self.config['horiz_axis']]    # one side of triangle
+        b = accel[self.config['vert_axis']]     # other side of triangle
+        self.angularv = gyro[self.config['pitch_axis']] # angular velocity around pitch axis
+        if b != 0:  # check we have actual measurements ready
+            self.g_angle = math.degrees(math.atan(a / b))    # angle of gravity vector
+            self.pitch_angle.add(self.g_angle, self.config['pitch_filter'])
+            self.pitch_deriv.add(self.angularv, self.config['gyro_filter'])
+
+        if self.ToF_sensor and self.ToF_sensor.is_data_ready():
+            if depthimg := self.ToF_sensor.get_ranging_data():
+                self.last_depth_measurement = depthimg
+
+        # keep track of travel distance
+        self.travel += self.motor_speed * dt  # estimate integral of motor rotation
+    #end update
 
 
     def off(self):
@@ -250,8 +262,10 @@ class BalancerBot:
         if self.ble:
             self.ble.deactivate()
         print("Finished")
+    #end off
 
 
+# -------------------------------------------------- logging --------------------------------------------------
     def start_logging(self, fields: list[str], logname='log', duration=5):
         self.logfile = open(logname + '.csv', 'w')
         if self.logfile:
@@ -283,4 +297,20 @@ class BalancerBot:
             return True
         else:
             return False
-        
+
+    def measure_accel_with_time(self):
+        v = self.IMU.get_accel() # type: ignore
+        v['t'] = self.IMU_last_update_time
+        return v
+
+    def measure_gyro_with_time(self):
+        v = self.IMU.get_gyro() # type: ignore
+        v['t'] = self.IMU_last_update_time
+        return v
+
+    def measure_mag_with_time(self):
+        v = self.IMU.get_mag() # type: ignore
+        v['t'] = self.IMU_last_update_time
+        return v
+
+

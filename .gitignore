@@ -1,5 +1,6 @@
 costs.ods
 notes.md
+src/UI/__pycache__
 src/VL53L7CX-api/make/build
 src/VL53L7CX-api/cmake/*
 !src/VL53L7CX-api/cmake/CMakeLists.txt

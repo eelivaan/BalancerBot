@@ -93,7 +93,9 @@ extern "C"
         if (isAlive && r == VL53L7CX_STATUS_OK)
             print("VL53L7CX Sensor alive\n");
         else
-            perror("Error: VL53L7CX sensor not alive\n");
+            raise_RuntimeError("VL53L7CX sensor not alive\n");
+
+        print("VL53L7CX Downloading firmware...\n");
 
         // Init VL53L7CX sensor
         r = self->dev.vl53l7cx_init();
@@ -104,6 +106,8 @@ extern "C"
         self->resolution = VL53L7CX_RESOLUTION_8X8;
 
         r = self->dev.vl53l7cx_set_ranging_frequency_hz(10);
+
+        print("VL53L7CX ready\n");
 
         return MP_OBJ_FROM_PTR(self);
     }
@@ -238,11 +242,14 @@ extern "C"
             {
                 mp_obj_t distance_array[VL53L7CX_RESOLUTION_8X8];
                 const uint8_t num_zones = self->resolution;
+                const size_t D = (num_zones == VL53L7CX_RESOLUTION_8X8) ? 8 : 4;
                 // fill array of int objects with distance measurements or None if no target detected
                 for (size_t i = 0; i < num_zones; i++)
                 {
-                    if (results.nb_target_detected[i] > 0)
-                        distance_array[i] = mp_obj_new_int(results.distance_mm[i]);
+                    // perform 90 degree clockwise rotation for the matrix
+                    const size_t j = ((D - 1) - i % D) * D + i / D;
+                    if (results.nb_target_detected[j] > 0)
+                        distance_array[i] = mp_obj_new_int(results.distance_mm[j]);
                     else
                         distance_array[i] = mp_const_none;
                 }

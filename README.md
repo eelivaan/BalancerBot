@@ -6,5 +6,5 @@ The project also features a desktop user interface for tuning the PID parameters
 ## UI dependencies
 
 ```bash
-pip install bleak numpy matplotlib
+pip install bleak numpy matplotlib opencv-python pillow
 ```

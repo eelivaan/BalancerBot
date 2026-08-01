@@ -75,7 +75,7 @@ class GUIApp(tk.Tk):
                     text += f"Motor Speed: {data['mt']:.3f}\n"
                     text += f"Loop dt: {data['dt'] / 1000.0:.3f} ms\n"
                     text += f"Battery: {data['b']:.2f} V\n"
-                    text += f"Distance: {data['d']:.1f} cm"
+                    text += f"State: {data['snm']}"
                     self.accel_label.config(text=text)
             if ble_thread.check_ack():
                 self.ok_label.grid()  # Show "ok" label

@@ -23,15 +23,22 @@ print("]")
 
 print(sensor)
 
-sensor.configure("4x4", 2)
+sensor.configure("4x4", 5)
 
 sensor.start_ranging()
 
 print(sensor)
 
-for i in range(10):
+while input() != 'q':
     if sensor.is_data_ready():
-        print(sensor.get_ranging_data())
+        for (i,d) in enumerate(sensor.get_ranging_data()):
+            if i % 4 == 0:
+                print()
+            if d != None:
+                print(f"{d:03}", end=' ')
+            else:
+                print("---", end=' ')
+        print()
     time.sleep_ms(300)
 
 sensor.stop_ranging()
