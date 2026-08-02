@@ -1,6 +1,6 @@
 from utime import sleep, sleep_us, ticks_ms, ticks_us, ticks_diff
 from robot import BalancerBot
-from statemachine import StateMachine, STATE_Rest, STATE_Driving, on_config_load, pitch_control, travel_control, heading_control
+from statemachine import *
 import json
 
 # let power stabilize before starting the actual work
@@ -17,7 +17,7 @@ def ble_msg_callback(msg):
     try:
         params = json.loads(msg)
         t = params.get('type')
-        # update PID params
+    # update PID params
         if t == 'pid0':
             pitch_control.configure(params)
             bot.config['pid0']['target'] = params['target']
@@ -27,7 +27,7 @@ def ble_msg_callback(msg):
             heading_control.configure(params)
         elif t == 'motors_en':
             bot.motors_enabled = params['en']
-        # download config file
+    # download config file
         elif t == 'config':
             with open("config.json", "w") as f:
                 f.write(params['content'])
@@ -40,13 +40,16 @@ def ble_msg_callback(msg):
         elif t == 'log':
             bot.start_logging(['time', 'pitch', 'gyro', 'motor_position'], duration=5)
             log_pending = True
-        # remote control
+    # remote control
         elif t == 'rc_start':
             bot.RC_on = True
-            stm.change_state(STATE_Driving())
-        elif t == 'rc':
-            travel_control.target_value = params['sp']
-            heading_control.target_value = params['hd']
+            stm.change_state(STATE_Raiseup())
+        elif t == 'rc_move':
+            stm.change_state(STATE_Driving(params['sp']))
+        elif t == 'rc_turn':
+            stm.change_state(STATE_Turning(params['sp']))
+        elif t == 'rc_stop':
+            stm.change_state(STATE_Balancing())
         elif t == 'rc_end':
             bot.RC_on = False
             stm.change_state(STATE_Rest())

@@ -64,7 +64,7 @@ class RemoteControlUI(tk.Tk):
         self.depth_photo = create_depthmap(np.array(np.zeros(16)))
         self.depth_label.config(image=self.depth_photo)
 
-        self.motors_btn = ttk.Button(self, text="Enable motors", command=self.lift)
+        self.motors_btn = ttk.Button(self, text="Enable motors", command=self.liftup)
         self.motors_btn.pack(side="left", padx=10, pady=10, ipadx=5)
 
         self.stop_btn = ttk.Button(self, text="Stop program", command=self.quit)
@@ -94,13 +94,13 @@ class RemoteControlUI(tk.Tk):
         if event.keysym not in self.pressed_keys:
             self.pressed_keys.add(event.keysym)
             if 'w' in self.pressed_keys:
-                self.forward()
+                self.drive(0.5)
             elif 's' in self.pressed_keys:
-                self.backward()
+                self.drive(-0.5)
             elif 'a' in self.pressed_keys:
-                self.turn(30)
+                self.turn(0.1)
             elif 'd' in self.pressed_keys:
-                self.turn(-30)
+                self.turn(-0.1)
 
     def key_up(self, event):
         if event.keysym in self.pressed_keys:
@@ -108,24 +108,20 @@ class RemoteControlUI(tk.Tk):
         if not self.pressed_keys:
             self.stop()
 
-    def forward(self):
-        ble_thread.send(json.dumps({'type': 'rc', 'sp': 0.5, 'hd': self.target_heading}))
-
-    def backward(self):
-        ble_thread.send(json.dumps({'type': 'rc', 'sp': -0.5, 'hd': self.target_heading}))
-
-    def lift(self):
-        ble_thread.send(json.dumps({'type': 'motors_en', 'en': True}))
+    def drive(self, speed):
+        ble_thread.send(json.dumps({'type': 'rc_move', 'sp': speed}))
 
     def stop(self):
-        ble_thread.send(json.dumps({'type': 'rc', 'sp': 0.0, 'hd': self.target_heading}))
+        ble_thread.send(json.dumps({'type': 'rc_stop'}))
 
-    def turn(self, a):
-        self.target_heading = (self.target_heading + a) % 360
-        ble_thread.send(json.dumps({'type': 'rc', 'sp': 0.0, 'hd': self.target_heading}))
+    def turn(self, speed):
+        ble_thread.send(json.dumps({'type': 'rc_turn', 'sp': speed}))
 
     def quit(self):
         ble_thread.send(json.dumps({'type': 'quit'}))
+
+    def liftup(self):
+        ble_thread.send(json.dumps({'type': 'rc_start'}))
         
 
     def tick(self):

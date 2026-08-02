@@ -1,5 +1,6 @@
 """ State machine for the robot. 
-    Each state is a function that ticks regularly and returns the new state.
+    Each state is a special class that has callbacks for state transitions and
+    has a tick function that returns the new state when needed.
 """
 from robot import BalancerBot
 from control import PIDController, limit
@@ -29,6 +30,7 @@ def on_config_load(config):
 
 class StateMachine:
     state_time = 0.0  # time in seconds since state change
+    motor_signal = 0.0  # keep track of motor control signal
 
     def __init__(self, bot: BalancerBot):
         self.bot = bot
@@ -49,7 +51,7 @@ class StateMachine:
             if new_state := self.cur_state.tick(self.bot, dt):
                 # transition if needed
                 self.change_state(new_state)
-    #end update
+#end StateMachine
 
 
 class STATE_Base:
@@ -73,49 +75,71 @@ class STATE_Rest(STATE_Base):
         bot.motor_input(0, 0)
 
     def tick(self, bot: BalancerBot, dt: float):
-        if StateMachine.state_time > 2.0:
+        if StateMachine.state_time > 1.5:
             pitch_offset = bot.config['pid0']['target']
-            # start balancing when lifted up by external forces (hand)
+            # start balancing when lifted up by external forces (helping hand)
             if abs(bot.pitch_angle.get() - pitch_offset) < 1.0:
                 return STATE_Balancing()
 
     def exit(self, bot: BalancerBot):
-        pass
+        # reset error integrals that may have accumulated while resting (although that shouldn't happen)
+        pitch_control.err_integral, travel_control.err_integral, heading_control.err_integral = 0.0, 0.0, 0.0
+        StateMachine.motor_signal = 0.0
 
 
 class STATE_Raiseup(STATE_Base):
     """ The robot raises from rest to balance point  """
+
+    def enter(self, bot: BalancerBot):
+        # full speed ahead
+        bot.motor_input(1.0, 1.0)
+
+    def tick(self, bot: BalancerBot, dt: float):
+        if StateMachine.state_time > 0.7:
+            # full speed backwards
+            bot.motor_input(-1.0, -1.0)
+        if abs(bot.pitch_angle.get()) < 5.0 or StateMachine.state_time > 1.5:
+            return STATE_Balancing()
+
+    def exit(self, bot: BalancerBot):
+        StateMachine.motor_signal = -1.0
 
 
 class STATE_Balancing(STATE_Base):
     """ The robot holds balance and stays put without drifting """
 
     def enter(self, bot: BalancerBot):
-        self.motor_signal = 0.0
         self.signal_saturation_time = 0.0
-        pitch_control.err_integral, travel_control.err_integral, heading_control.err_integral = 0.0, 0.0, 0.0
+        travel_control.target_value = 0.0
+        heading_control.target_value = bot.heading
+        bot.travel = 0.0
 
     def tick(self, bot: BalancerBot, dt: float):
-        pitch_offset = bot.config['pid0']['target']
-        
         # adjust pitch controller target to maintain zero travel
-        if not isinstance(self, STATE_Driving):
-            pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.travel, dt)
-        # keep balance by PID control from pitch angle and pitch derivative
-        signal_pitch = pitch_control.calcPID(bot.pitch_angle.get(), dt, -bot.pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
+        pitch_offset = bot.config['pid0']['target']
+        pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.travel, dt)
+
         # keep heading
         signal_yaw = heading_control.calcPID(bot.heading, dt)
 
+        return self.balance(bot, dt, signal_yaw)
+
+    def balance(self, bot: BalancerBot, dt: float, signal_yaw: float):
+        """ Do the actual balancing control with common termination conditions """
+
+        # keep balance by PID control from pitch angle and pitch derivative
+        signal_pitch = pitch_control.calcPID(bot.pitch_angle.get(), dt, -bot.pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
+
         # apply input to motors
-        self.motor_signal = limit(self.motor_signal + signal_pitch, 1.0)
-        left_motor_signal =  limit(self.motor_signal - signal_yaw, 1.0)
-        right_motor_signal = limit(self.motor_signal + signal_yaw, 1.0)
+        StateMachine.motor_signal = limit(StateMachine.motor_signal + signal_pitch, 1.0)
+        left_motor_signal =  limit(StateMachine.motor_signal - signal_yaw, 1.0)
+        right_motor_signal = limit(StateMachine.motor_signal + signal_yaw, 1.0)
         bot.motor_input(left_motor_signal, right_motor_signal)
 
         # stop movement when detecting object
         if len(bot.last_depth_measurement) and bot.last_depth_measurement[5]:
-            # check center pixel
-            if bot.last_depth_measurement[5] < 10*bot.config['stop_distance_cm']:
+            # check center pixel of the depth image
+            if bot.last_depth_measurement[5] < 10 * bot.config['stop_distance_cm']:
                 return STATE_Rest()
 
         # stop movement when tilted too much
@@ -123,7 +147,7 @@ class STATE_Balancing(STATE_Base):
             return STATE_Rest()
 
         # stop movement when signal saturates too long
-        if abs(self.motor_signal) > 0.9:
+        if abs(StateMachine.motor_signal) > 0.9:
             self.signal_saturation_time += dt * 1000
             if self.signal_saturation_time > bot.config['signal_cutoff_ms']:
                 return STATE_Rest()
@@ -135,14 +159,38 @@ class STATE_Balancing(STATE_Base):
 class STATE_Driving(STATE_Balancing):
     """ The robot moves horizontally while keeping balance """
 
+    def __init__(self, speed):
+        self.speed = speed
+
     def enter(self, bot: BalancerBot):
-        super().enter(bot)
+        self.signal_saturation_time = 0.0
+        travel_control.target_value = self.speed
+        heading_control.target_value = bot.heading
 
     def tick(self, bot: BalancerBot, dt: float):
-        pitch_offset = bot.config['pid0']['target']
         # adjust pitch target to maintain constant movement speed
+        pitch_offset = bot.config['pid0']['target']
         pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
-        return super().tick(bot, dt)
+        # keep heading
+        signal_yaw = heading_control.calcPID(bot.heading, dt)
+        return super().balance(bot, dt, signal_yaw)
 
     def exit(self, bot: BalancerBot):
-        super().exit(bot)
+        pass
+
+
+class STATE_Turning(STATE_Balancing):
+    """ The robot turns in place while keeping balance """
+
+    def __init__(self, turning_speed):
+        self.turning_speed = turning_speed
+
+    def enter(self, bot: BalancerBot):
+        self.signal_saturation_time = 0.0
+        travel_control.target_value = 0.0
+
+    def tick(self, bot: BalancerBot, dt: float):
+        return super().balance(bot, dt, self.turning_speed)
+
+    def exit(self, bot: BalancerBot):
+        pass
