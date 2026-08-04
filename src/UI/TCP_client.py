@@ -1,6 +1,4 @@
-import socket
-import sys
-import os
+import socket, sys, os, requests
 
 # change cwd one level up
 os.chdir(os.path.dirname(os.path.abspath(__file__)) + os.sep + '..')
@@ -18,52 +16,31 @@ while True:
     if 'help' in inp:
         print('Available commands:\n'
               '  GET /\n'
+              '  upload <host filename> [<target filename>]\n'
               '  quit\n'
-              '  upload <file>\n'
               '  help\n')
         continue
 
     params = inp.split(' ')
     cmd = params.pop(0).upper()
 
-    body = ""
-    if cmd == "UPLOAD":
-        if len(params):
-            with open('main/' + params[0], 'r') as f:
-                body = f.read()
-        else:
-            print('Error: filename expected')
-            continue
+    if cmd == 'GET' and len(params):
+        r = requests.get(f"http://{HOST}:{PORT}/{params[0]}")
+    elif cmd == 'GET':
+        r = requests.get(f"http://{HOST}:{PORT}")
+    elif (cmd == 'UPLOAD' or cmd == 'POST') and len(params):
+        host_filename = params[0]
+        target_filename = params[1] if len(params) > 1 else host_filename
+        with open('main/' + host_filename, 'r') as f:
+            r = requests.post(f"http://{HOST}:{PORT}/{target_filename}", files={'file': f})
+    else:
+        r = requests.post(f"http://{HOST}:{PORT}", data=cmd.encode())
 
-    #s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #s.connect((HOST, PORT))
-    with socket.create_connection((HOST, PORT), timeout=5.0) as s:
-        print(f"{GREEN}Connected to {HOST}:{PORT}{RESET}")
-        #s.sendall(inp.encode() + b'\r\n')
-        #s.sendall(b'\r\n')
-        #for i in range(1):
-        #    data = s.recv(1024)
-        #    print(repr(data))
-
-        # request
-        s_file = s.makefile('rwb', 0)
-        s_file.write(f"{cmd} {' '.join(params)}\r\n".encode())
-        s_file.write(b'Content-type: text/plain\r\n')
-        s_file.write(f'Content-length: {len(body)}\r\n'.encode())
-        s_file.write(b'\r\n')
-        s_file.flush()
-        if body:
-            s_file.write(body.encode())
-        s_file.flush()
-
-        # read response
+    print(GREEN, end='')
+    print(r.status_code)
+    if r.status_code == 200:
         print(GRAY, end='')
-        while line := s_file.readline():
-            print(line.decode(), end='')
+        print(r.text)
+    print(RESET, end='')
 
-        print(RESET, end='')
-
-        # close connection
-        s.close()
-        print(f"{GREEN}Connection closed{RESET}")
-        
+    r.close()
