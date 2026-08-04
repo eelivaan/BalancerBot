@@ -125,3 +125,9 @@ print("Terminated")
 sleep(2.0)
 
 bot.off()
+
+
+# start REPL over WLAN
+from networking import WLAN_connect, WLAN_disconnect
+
+#WLAN_connect()

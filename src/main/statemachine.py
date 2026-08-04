@@ -91,18 +91,19 @@ class STATE_Raiseup(STATE_Base):
     """ The robot raises from rest to balance point  """
 
     def enter(self, bot: BalancerBot):
+        self.direction = 1.0 if bot.pitch_angle.get() < 0.0 else -1.0
         # full speed ahead
-        bot.motor_input(1.0, 1.0)
+        bot.motor_input(self.direction, self.direction)
 
     def tick(self, bot: BalancerBot, dt: float):
         if StateMachine.state_time > 0.7:
             # full speed backwards
-            bot.motor_input(-1.0, -1.0)
+            bot.motor_input(-self.direction, -self.direction)
         if abs(bot.pitch_angle.get()) < 5.0 or StateMachine.state_time > 1.5:
             return STATE_Balancing()
 
     def exit(self, bot: BalancerBot):
-        StateMachine.motor_signal = -1.0
+        StateMachine.motor_signal = -self.direction
 
 
 class STATE_Balancing(STATE_Base):

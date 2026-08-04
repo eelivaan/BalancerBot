@@ -43,5 +43,7 @@
   "button_pin": "GP22",
   "ToF_sda_pin": "GP6",
   "ToF_scl_pin": "GP7",
-  "ToF_lpn_pin": 8
+  "ToF_lpn_pin": 8,
+  "ToF_resolution": "4x4",
+  "ToF_frequency": 5
 }

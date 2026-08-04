@@ -3,7 +3,7 @@ from tkinter import ttk
 import numpy as np
 import matplotlib.pyplot as plt
 import json
-from ble_client import BLEThread
+from BLE_client import BLEThread
 
 
 class GUIApp(tk.Tk):

@@ -39,8 +39,6 @@ class SlidingAverage:
 
 
 class BalancerBot:
-    """ Software abstraction for the robot """
-
     def __init__(self, config_load_callback=None):
         self.led_builtin = Pin("LED", Pin.OUT)
         self.led_builtin.on()
@@ -80,7 +78,7 @@ class BalancerBot:
         #    self.ToF_sensor = None
         try:
             self.ToF_sensor = VL53L7CX(self.ToF_i2c, self.config['ToF_lpn_pin'])
-            self.ToF_sensor.configure("4x4", 5)
+            self.ToF_sensor.configure(self.config['ToF_resolution'], self.config['ToF_frequency'])
         except Exception as e:
             print("Failed to init 8x8 VL53L7CX sensor: ", e)
             self.ToF_sensor = None

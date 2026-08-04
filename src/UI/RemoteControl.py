@@ -6,11 +6,12 @@ import numpy as np
 import cv2
 from time import sleep
 from PIL import Image, ImageTk
-from ble_client import BLEThread
+from BLE_client import BLEThread
 
 
 def create_depthmap(data):
-    #data = np.rot90(data, k=-1)
+    """ Convert linear array of depth data into a depth image displayable with Tk """
+    # data = np.rot90(data, k=-1)
     R = 8 if len(data) == 64 else 4
     data = data.reshape((R, R))
 
@@ -28,7 +29,7 @@ def create_depthmap(data):
     scale = 60  # each cell becomes 60x60 pixels
     big = cv2.resize(color, (R * scale, R * scale), interpolation=cv2.INTER_LINEAR)
 
-    # Optional: overlay raw depth values
+    # overlay raw depth values
     for r in range(R):
         for c in range(R):
             text = str(int(data[r, c]))
