@@ -27,16 +27,22 @@ def ble_msg_callback(msg):
             heading_control.configure(params)
         elif t == 'motors_en':
             bot.motors_enabled = params['en']
+    # set config entry
+        elif t == 'set_config':
+            bot.config[params['key']] = params['value']
     # download config file
         elif t == 'config':
             with open("config.json", "w") as f:
                 f.write(params['content'])
             bot.load_config()  # Reload config to apply changes
+    # terminate
         elif t == 'quit':
             bot.quit_flag = True
+    # calibrate IMU
         elif t == 'calibrate':
             bot.IMU.calibrate()
             pitch_angle = None
+    # start logging
         elif t == 'log':
             bot.start_logging(['time', 'pitch', 'gyro', 'motor_position'], duration=5)
             log_pending = True
@@ -80,7 +86,7 @@ while not bot.quit_flag:
         # update sensors, status etc.
         bot.update(dt)
 
-        # update state (creates inputs for robot)
+        # update state (sets motor input)
         stm.update(dt)
 
         # send status info to laptop periodically
@@ -127,7 +133,8 @@ sleep(2.0)
 bot.off()
 
 
-# enable filesystem control over WLAN
+# -- start filesystem control over WLAN --
+
 from networking import run_tcp_server
 
 run_tcp_server(stopcondition = lambda: bot.button_pressed())
