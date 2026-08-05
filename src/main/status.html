@@ -14,8 +14,27 @@
 </head>
 
 <body>
-    <h1>Pico Status</h1>
-    <div>%s</div>
+    <h2>Pico Status</h2>
+    <div>
+        <p>Battery: %.2f V | Local time: %s</p>
+        <button id="quitbtn">Shutdown Pico</button>
+        <button id="bootbtn">Boot Pico</button>
+    </div>
+    <h2>Directory Tree</h2>
+    <div>
+        %s
+    </div>
+    <script>
+        function addPostCMD(btnID, cmd) {
+            document.getElementById(btnID).addEventListener('click', async () => {
+                await fetch(window.location.pathname, {
+                    method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: cmd,
+                });
+            });
+        }
+        addPostCMD('quitbtn', 'QUIT');
+        addPostCMD('bootbtn', 'BOOT');
+    </script>
 </body>
 
 </html>

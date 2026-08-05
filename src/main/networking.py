@@ -1,46 +1,68 @@
-import network, socket, os, machine, select
-from machine import Pin
-from time import sleep_ms
+import network, socket, os, machine, select, time
+from machine import Pin, ADC
 from wlancredentials import SSID, PASSWORD
 
-with open('status.html', 'r') as f:
-    html = f.read()
+led = Pin("LED", Pin.OUT)
+wlan = None
+html = ''
+
+def reload_status_html():
+    global html
+    with open('status.html', 'r') as f:
+        html = f.read()
+
+def read_battery_voltage():
+    bat_adc = ADC(Pin("GP26"))
+    raw = bat_adc.read_u16()
+    return raw / 65535.0 * 3.3 * 2
 
 def GET_response(cmd, param):
     if cmd == 'GET' and param != '/':
         # return contents of the specified file
-        file_content = 'N/A'
-        with open('.'+param, 'r') as f:
-            file_content = f.read()
-        return 'text/plain', file_content
+        try:
+            file_content = 'N/A'
+            with open('.'+param, 'r') as f:
+                file_content = f.read()
+            return 'text/plain', file_content
+        except OSError as e:
+            return 'text/plain', ''  # return empty response as sign of error
     else:
+        if html == '':
+            reload_status_html()
         # list files in pico
-        return 'text/html', html % '<br>'.join([f"|- <a href='/{f}'>{f}</a>" for f in os.listdir()])
+        filetree = '<br>'.join([f"|- <a href='/{f}'>{f}</a> ({os.stat(f)[6] / 1000:.1f} kB)" for f in os.listdir()])
+        dtm = time.localtime(time.time())
+        return 'text/html', html % (read_battery_voltage(), 
+                                    f'{dtm[3]:02}:{dtm[4]:02}:{dtm[5]:02}', 
+                                    filetree)
 
 
 def WLAN_connect():
     """ Connect to local wireless network for e.g. mpremote access """
-    led = Pin("LED", Pin.OUT)
+    global wlan
+
     led.on()
 
     # connect to newwork
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     print('WLAN active')
+    wlan.config(pm = 0xa11140) # Power saving mode off
 
     print(f'WLAN trying to connect "{SSID}"')
     wlan.connect(SSID, PASSWORD)
-    wlan.config(pm = 0xa11140) # Power saving mode off
 
     # Wait for connection for 10 seconds or fail
+    print('WLAN waiting for connection...', end='')
     for i in range(10):
         if wlan.status() < 0 or wlan.status() >= 3:
             break
-        print('WLAN waiting for connection...')
+        print('.', end='')
         led.off()
-        sleep_ms(100)
+        time.sleep_ms(100)
         led.on()
-        sleep_ms(900)
+        time.sleep_ms(900)
+    print()
 
     # Handle connection error
     if wlan.status() != 3:
@@ -57,26 +79,48 @@ def WLAN_connect():
 
 def WLAN_disconnect():
     """ Disconnect and deactivate WLAN """
-    led = Pin("LED", Pin.OUT)
-    wlan = network.WLAN(network.STA_IF)
+    global wlan
+    if wlan:
+        if wlan.status() == 3:
+            wlan.disconnect()
+            print('WLAN disconnected')
 
-    if wlan.status() == 3:
-        wlan.disconnect()
-        print('WLAN disconnected')
-
-    wlan.active(False)
-    print('WLAN inactive')
+        wlan.active(False)
+        print('WLAN inactive')
     led.off()
 
 
 def WLAN_startAP():
-    return False
+    """ Start WLAn in access point mode """
+    global wlan
+
+    led.on()
+
+    # connect to newwork
+    wlan = network.WLAN(network.AP_IF)
+    # Power saving mode off, WiFi name, WiFi password, security protocol
+    wlan.active(True)
+    wlan.config(pm = 0xa11140, ssid='Pico AP2', key='pico_2026', security=3, hidden=False)
+    print('AP activating...', end='')
+    while not wlan.active():
+        print('.', end='')
+    print('\nWLAN AP available as "Pico AP2" (pico_2026)...')
+
+    status = wlan.ifconfig()
+    print('ip = ' + status[0])
+
+    return True
 
 
 def run_tcp_server(port=2323, stopcondition=lambda: False):
+    # connect to existing network or start AP
     if not WLAN_connect():
-        if not WLAN_startAP():
-            return
+        led.off()
+        wlan.active(False) # type: ignore
+        #print()
+        #time.sleep_ms(1000)
+        #if not WLAN_startAP():
+        return
 
     # start server
     addr = socket.getaddrinfo("0.0.0.0", port)[0][-1]
@@ -86,31 +130,21 @@ def run_tcp_server(port=2323, stopcondition=lambda: False):
     server_socket.bind(addr)
     server_socket.listen(1)
 
-    print(f"Listening on port {port}")
+    print(f"Listening on port {port}...", end='')
     server_running = True
     boot_requested = False
-
-    poll = select.poll()
-    poll.register(server_socket)
-
+    
     while server_running and not stopcondition():
-        print("Waiting for clients...")
+        print('.', end='')
 
         try:
-            # poll incoming clients with 2 second timeout
-            can_accept = False
-            for res in poll.ipoll(2000):
-                if res[0] == server_socket and (res[1] & (select.POLLIN | select.POLLOUT)):
-                    can_accept = True
-            if not can_accept:
+            rlist, wlist, errlist = select.select([server_socket], [], [], 1) # type: ignore
+            if server_socket not in rlist:
                 continue
-            #rlist, wlist, errlist = select.select([server_socket], [], [], 1) # type: ignore
         except KeyboardInterrupt as e:
-            poll.unregister(server_socket)
-            server_socket.close()
-            print('Server closed')
-            return
-        
+            break
+
+        print()
         try:
             (client, client_addr) = server_socket.accept()
             print("Client connected:", client_addr)
@@ -131,7 +165,7 @@ def run_tcp_server(port=2323, stopcondition=lambda: False):
                     cmd, path, _ = line.split(' ', 3)
 
             # read request body
-            print(cmd, path, headers)
+            #print(cmd, path, headers)
             content_length = int(headers['content-length'])
             resp_type, response = 'text/plain', ''
 
@@ -147,6 +181,8 @@ def run_tcp_server(port=2323, stopcondition=lambda: False):
                                 if boundary in line:
                                     break
                                 f.write(line)
+                        if 'status.html' in path:
+                            reload_status_html()
                         response = 'file-ok'
                     elif 'text/plain' in headers['content-type']:
                         cmd = cl_file.read(content_length).decode().strip()
@@ -165,7 +201,7 @@ def run_tcp_server(port=2323, stopcondition=lambda: False):
                 boot_requested = True
                 response = 'boot-ok'
 
-            if cmd in ('GET', 'POST', 'QUIT', 'BOOT'):
+            if response:
                 client.send(f'HTTP/1.0 200 OK\r\n'
                             f'Content-type: {resp_type}\r\n'
                             f'Content-length: {len(response)}\r\n'
@@ -181,13 +217,14 @@ def run_tcp_server(port=2323, stopcondition=lambda: False):
             client.close()
             print("Client disconnected")
 
-    poll.unregister(server_socket)
+    print()
     server_socket.close()
     print('Server closed')
-    sleep_ms(2000)
+    time.sleep_ms(1500)
     WLAN_disconnect()
 
     if boot_requested:
+        print('Soft reset...')
         machine.soft_reset()
 #end run_tcp_server
 
