@@ -127,7 +127,7 @@ sleep(2.0)
 bot.off()
 
 
-# start REPL over WLAN
-from networking import WLAN_connect, WLAN_disconnect
+# enable filesystem control over WLAN
+from networking import run_tcp_server
 
-#WLAN_connect()
+run_tcp_server(stopcondition = lambda: bot.button_pressed())

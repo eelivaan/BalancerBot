@@ -1,7 +1,7 @@
 import socket, sys, os, requests
 
 # change cwd one level up
-os.chdir(os.path.dirname(os.path.abspath(__file__)) + os.sep + '..')
+os.chdir(os.path.dirname(os.path.abspath(__file__)) + os.sep + '..') # type: ignore
 
 HOST = sys.argv[1]
 PORT = int(sys.argv[2])
@@ -15,9 +15,10 @@ while True:
         continue
     if 'help' in inp:
         print('Available commands:\n'
-              '  GET /\n'
+              '  get [<filename>]\n'
               '  upload <host filename> [<target filename>]\n'
               '  quit\n'
+              '  boot\n'
               '  help\n')
         continue
 

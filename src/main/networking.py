@@ -1,27 +1,15 @@
+import network, socket, os, machine, select
 from machine import Pin
 from time import sleep_ms
-import network, socket, os
 from wlancredentials import SSID, PASSWORD
 
-html = """<!DOCTYPE html>
-<html>
-    <head>
-        <title>Pico Status</title>
-        <style>
-            html { color-scheme: light dark; font-family: monospace; line-height: 1.5; margin-left: 15px; }
-        </style>
-    </head>
-    <body>
-        <h1>Pico Status</h1>
-        <div>%s</div>
-    </body>
-</html>
-"""
+with open('status.html', 'r') as f:
+    html = f.read()
 
-def respond(cmd, param):
+def GET_response(cmd, param):
     if cmd == 'GET' and param != '/':
         # return contents of the specified file
-        file_content = "N/A"
+        file_content = 'N/A'
         with open('.'+param, 'r') as f:
             file_content = f.read()
         return 'text/plain', file_content
@@ -81,28 +69,53 @@ def WLAN_disconnect():
     led.off()
 
 
-def run_tcp_server(port=2323):
+def WLAN_startAP():
+    return False
+
+
+def run_tcp_server(port=2323, stopcondition=lambda: False):
     if not WLAN_connect():
-        # put Pico in AP mode
-        return
+        if not WLAN_startAP():
+            return
 
     # start server
     addr = socket.getaddrinfo("0.0.0.0", port)[0][-1]
-    s = socket.socket()
-    s.settimeout(None)  # blocking mode
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(addr)
-    s.listen(1)
+    server_socket = socket.socket()
+    server_socket.settimeout(None)  # blocking mode
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(addr)
+    server_socket.listen(1)
 
     print(f"Listening on port {port}")
     server_running = True
+    boot_requested = False
 
-    while server_running:
+    poll = select.poll()
+    poll.register(server_socket)
+
+    while server_running and not stopcondition():
         print("Waiting for clients...")
+
         try:
-            (client, client_addr) = s.accept()
+            # poll incoming clients with 2 second timeout
+            can_accept = False
+            for res in poll.ipoll(2000):
+                if res[0] == server_socket and (res[1] & (select.POLLIN | select.POLLOUT)):
+                    can_accept = True
+            if not can_accept:
+                continue
+            #rlist, wlist, errlist = select.select([server_socket], [], [], 1) # type: ignore
+        except KeyboardInterrupt as e:
+            poll.unregister(server_socket)
+            server_socket.close()
+            print('Server closed')
+            return
+        
+        try:
+            (client, client_addr) = server_socket.accept()
             print("Client connected:", client_addr)
             cl_file = client.makefile('rwb', 0)
+
             # read request header
             cmd, path = '', ''
             headers = {'content-length': 0, 'content-type': 'text/plain'}
@@ -116,30 +129,43 @@ def run_tcp_server(port=2323):
                 else:
                     print(line)
                     cmd, path, _ = line.split(' ', 3)
+
             # read request body
             print(cmd, path, headers)
             content_length = int(headers['content-length'])
+            resp_type, response = 'text/plain', ''
+
             if content_length > 0:
                 if cmd == 'POST':
                     if 'form-data' in headers['content-type']:
-                        # save content to file
                         boundary = cl_file.readline().strip()
                         content_disposition = cl_file.readline().strip()
                         content_type = cl_file.readline().strip()
+                        # save content to file
                         with open('.'+path, 'wb') as f:
                             while line := cl_file.readline():
                                 if boundary in line:
                                     break
                                 f.write(line)
-                    else:
-                        cmd = cl_file.read(content_length).decode()
+                        response = 'file-ok'
+                    elif 'text/plain' in headers['content-type']:
+                        cmd = cl_file.read(content_length).decode().strip()
                         print(cmd)
                 else:
                     while cl_file.readline(): pass
-                        
+            
             # send response
-            if cmd == 'GET' or cmd == 'POST':
-                resp_type, response = respond(cmd, path)
+            if cmd == 'GET':
+                resp_type, response = GET_response(cmd, path)
+            elif cmd == 'QUIT':
+                server_running = False
+                response = 'quit-ok'
+            elif cmd == 'BOOT':
+                server_running = False
+                boot_requested = True
+                response = 'boot-ok'
+
+            if cmd in ('GET', 'POST', 'QUIT', 'BOOT'):
                 client.send(f'HTTP/1.0 200 OK\r\n'
                             f'Content-type: {resp_type}\r\n'
                             f'Content-length: {len(response)}\r\n'
@@ -151,15 +177,18 @@ def run_tcp_server(port=2323):
 
             client.close()
 
-            if cmd == 'QUIT':
-                server_running = False
-
         except OSError as e:
             client.close()
             print("Client disconnected")
 
-    sleep_ms(3000)
+    poll.unregister(server_socket)
+    server_socket.close()
+    print('Server closed')
+    sleep_ms(2000)
     WLAN_disconnect()
+
+    if boot_requested:
+        machine.soft_reset()
 #end run_tcp_server
 
 
