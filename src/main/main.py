@@ -56,6 +56,8 @@ def ble_msg_callback(msg):
             stm.change_state(STATE_Turning(params['sp']))
         elif t == 'rc_stop':
             stm.change_state(STATE_Balancing())
+        elif t == 'rc_path':
+            stm.change_state(STATE_FollowPath())
         elif t == 'rc_end':
             bot.RC_on = False
             stm.change_state(STATE_Rest())

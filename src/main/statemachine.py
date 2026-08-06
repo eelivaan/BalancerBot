@@ -1,8 +1,8 @@
 """ State machine for the robot. 
     Each state is a special class that has callbacks for state transitions and
-    has a tick function that returns the new state when needed.
+    has a tick function which returns the new state when needed.
 """
-from robot import BalancerBot
+from robot import BalancerBot, sign
 from control import PIDController, limit
 
 
@@ -19,17 +19,9 @@ def on_config_load(config):
     travel_control.configure(config['pid1'])
     heading_control.configure(config['pid2'])
 
-#def reset_control():
-#    global motor_traversal, motor_signal
-#    bot.motors_enabled = True
-#    pitch_control.err_integral, travel_control.err_integral, heading_control.err_integral = 0.0, 0.0, 0.0
-#    motor_traversal = 0.0
-#    motor_signal = 0.0
-#    bot.heading = 0.0
-
 
 class StateMachine:
-    state_time = 0.0  # time in seconds since state change
+    state_time = 0.0    # time in seconds since last state change
     motor_signal = 0.0  # keep track of motor control signal
 
     def __init__(self, bot: BalancerBot):
@@ -192,7 +184,65 @@ class STATE_Turning(STATE_Balancing):
         travel_control.target_value = 0.0
 
     def tick(self, bot: BalancerBot, dt: float):
+        # adjust pitch controller target to maintain zero travel
+        pitch_offset = bot.config['pid0']['target']
+        pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.travel, dt)
+
         return super().balance(bot, dt, self.turning_speed)
 
     def exit(self, bot: BalancerBot):
         pass
+
+
+class STATE_FollowPath(STATE_Base):
+    """ The robot drives the given sequence of straights and turns
+        Commands:
+            m<distance> Drive the specified distance
+            t<angle>    Turn the specified amount of degrees
+    """
+
+    def __init__(self, path = ['m2', 't180', 'm2', 't180']):
+        self.remaining_path = path
+        self.amount = 0.0
+
+    def enter(self, bot: BalancerBot):
+        self.substate = STATE_Balancing()
+        self.substate.enter(bot)
+
+    def tick(self, bot: BalancerBot, dt: float):
+        if self.substate.tick(bot, dt):
+            # forward termination
+            return STATE_Rest()
+
+        # driving
+        if isinstance(self.substate, STATE_Driving):
+            if abs(bot.travel) > abs(self.amount):
+                self.substate.exit(bot)
+                self.substate = STATE_Balancing()
+                self.substate.enter(bot)
+
+        # turning
+        elif isinstance(self.substate, STATE_Turning):
+            if abs(bot.headingsum) > abs(self.amount):
+                self.substate.exit(bot)
+                self.substate = STATE_Balancing()
+                self.substate.enter(bot)
+
+        # read next drive command
+        elif len(self.remaining_path):
+            self.substate.exit(bot)
+            cmd = self.remaining_path.pop(0)
+            self.amount = float(cmd[1:])
+            if cmd[0] == 'm':
+                self.substate = STATE_Driving(speed = 0.5 * sign(self.amount))
+            elif cmd[0] == 't':
+                self.substate = STATE_Turning(turning_speed = 0.1 * sign(self.amount))
+            else:
+                self.substate = STATE_Balancing()
+            self.substate.enter(bot)
+            bot.travel = 0.0
+            bot.headingsum = 0.0
+    #end tick
+
+    def exit(self, bot: BalancerBot):
+        self.substate.exit(bot)

@@ -105,7 +105,10 @@ class RemoteControlUI(tk.Tk):
     def key_up(self, event):
         if event.keysym in self.pressed_keys:
             self.pressed_keys.remove(event.keysym)
-        if not self.pressed_keys:
+        if event.keysym == 'space':
+            # start path following mode
+            ble_thread.send(json.dumps({'type': 'rc_path'}))
+        elif not self.pressed_keys:
             self.stop()
 
     def drive(self, speed):

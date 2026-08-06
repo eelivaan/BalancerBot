@@ -90,9 +90,10 @@ class BalancerBot:
         # BLE off by default
         self.ble = None
 
-        self.heading = 0.0
-        self.travel = 0.0
-        self.angularv = 0.0
+        self.heading = 0.0      # heading angle 0-359
+        self.travel = 0.0       # horizontal travel in undefined units
+        self.headingsum = 0.0   # total change of heading
+        self.angularv = 0.0     # angular velocity around pitch axis
         self.speed = SlidingAverage(self.config['speed_filter'])
         self.pitch_angle = SlidingAverage(self.config['pitch_filter'])
         self.pitch_deriv = SlidingAverage(self.config['gyro_filter'])
@@ -218,8 +219,9 @@ class BalancerBot:
         if self.IMU and self.IMU.dataReady():
             self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
             # track heading
-            self.heading += self.IMU.get_gyro()[self.config['vert_axis']] * dt
-            self.heading = math.fmod(self.heading, 360.0)
+            heading_delta = self.IMU.get_gyro()[self.config['vert_axis']] * dt
+            self.heading = math.fmod(self.heading + heading_delta, 360.0)
+            self.headingsum += heading_delta
             # track time
             self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
 
