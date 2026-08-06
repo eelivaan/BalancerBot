@@ -1,5 +1,5 @@
 """
-Asynchronous thread for BLE serial communication on laptop side
+    Asynchronous thread for Bluetooth Low Energy serial communication on laptop side
 """
 import asyncio
 import threading

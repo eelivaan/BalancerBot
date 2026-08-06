@@ -205,7 +205,7 @@ class BalancerBot:
             if self.RC_on:
                 # send different data when remote controlling
                 data = {'h': self.heading, 'mt': self.speed.get(), 'b': bat, 'sd': self.config['stop_distance_cm'], 
-                        'dimg': self.last_depth_measurement}
+                        'dimg': self.last_depth_measurement, 'dt': custom_data['dt']}
             else:
                 data = {'a': self.IMU.get_accel(), 'g': self.IMU.get_gyro(), 'm': self.IMU.get_mag(),  # type: ignore
                         't': self.IMU.get_temperature(), 'h': self.heading, 'b': bat,

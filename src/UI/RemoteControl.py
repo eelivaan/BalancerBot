@@ -65,9 +65,9 @@ class RemoteControlUI(tk.Tk):
         self.depth_photo = create_depthmap(np.array(np.zeros(16)))
         self.depth_label.config(image=self.depth_photo)
 
-        ttk.Button(self, text="Enable motors",        command=self.liftup).pack(side="left", padx=10, pady=10, ipadx=5)
-        ttk.Button(self, text="Stop program",         command=self.quit).pack(side="left", padx=10, pady=10, ipadx=5)
-        ttk.Button(self, text="Toggle Distance Stop", command=self.toggle_distance_stop).pack(side="left", padx=10, pady=10, ipadx=5)
+        ttk.Button(self, text="Enable motors",   command=self.liftup).pack(side="left", padx=10, pady=10, ipadx=5)
+        ttk.Button(self, text="Stop program",    command=self.quit).pack(side="left", padx=10, pady=10, ipadx=5)
+        ttk.Button(self, text="Toggle Autostop", command=self.toggle_distance_stop).pack(side="left", padx=10, pady=10, ipadx=5)
         self.stop_distance_cm = 30
 
         style = ttk.Style()
@@ -135,7 +135,7 @@ class RemoteControlUI(tk.Tk):
                 elif 'dimg' in data:
                     # status texts
                     text = f"Heading: {data['h']:.1f}° | Motor Speed: {data['mt']:.3f} | Battery: {data['b']:.2f} V\n"
-                    text += f"Stop distance: {data['sd']} cm\n"
+                    text += f"Stop distance: {data['sd']} cm | Loop dt: {data['dt'] / 1000.0:.1f} ms\n"
                     self.stop_distance_cm = data['sd']
                     self.text_label.config(text=text)
                     # depth image

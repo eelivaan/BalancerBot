@@ -19,6 +19,9 @@
         <p>Battery: %.2f V | Local time: %s</p>
         <button id="quitbtn">Shutdown Pico</button>
         <button id="bootbtn">Boot Pico</button>
+        <button id="testbtn">Test Connection</button>
+        <label id="response-status" style="color: aquamarine"></label>
+        <label id="response-text" style="color: gray"></label>
     </div>
     <h2>Directory Tree</h2>
     <div>
@@ -26,14 +29,25 @@
     </div>
     <script>
         function addPostCMD(btnID, cmd) {
-            document.getElementById(btnID).addEventListener('click', async () => {
-                await fetch(window.location.pathname, {
+            let btn = document.getElementById(btnID);
+            btn.addEventListener('click', async () => {
+                const response = await fetch(window.location.pathname, {
                     method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: cmd,
                 });
+                // display response
+                document.getElementById('response-status').textContent = response.status + ' ' + response.statusText;
+                document.getElementById('response-text').textContent = await response.text();
+                // clear response display after 2 s
+                setTimeout(() => {
+                    document.getElementById('response-status').textContent = '';
+                    document.getElementById('response-text').textContent = '';
+                }, 2000);
+
             });
         }
         addPostCMD('quitbtn', 'QUIT');
         addPostCMD('bootbtn', 'BOOT');
+        addPostCMD('testbtn', 'PING');
     </script>
 </body>
 
