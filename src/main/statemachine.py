@@ -65,12 +65,14 @@ class STATE_Rest(STATE_Base):
     def enter(self, bot: BalancerBot):
         # stop any movement
         bot.motor_input(0, 0)
+        bot.motors_enabled = False  # prevent accidental movements
 
     def tick(self, bot: BalancerBot, dt: float):
         if StateMachine.state_time > 1.5:
             pitch_offset = bot.config['pid0']['target']
             # start balancing when lifted up by external forces (helping hand)
             if abs(bot.pitch_angle.get() - pitch_offset) < 1.0:
+                bot.motors_enabled = True
                 return STATE_Balancing()
 
     def exit(self, bot: BalancerBot):
@@ -85,6 +87,7 @@ class STATE_Raiseup(STATE_Base):
     def enter(self, bot: BalancerBot):
         self.direction = 1.0 if bot.pitch_angle.get() > 0.0 else -1.0
         # full speed ahead
+        bot.motors_enabled = True
         bot.motor_input(self.direction, self.direction)
 
     def tick(self, bot: BalancerBot, dt: float):
@@ -92,6 +95,7 @@ class STATE_Raiseup(STATE_Base):
             # full speed backwards
             bot.motor_input(-self.direction, -self.direction)
         if abs(bot.pitch_angle.get()) < 5.0 or StateMachine.state_time > 1.0:
+            # enter balancing mode when swung up
             bot.motor_input(0, 0)
             return STATE_Balancing()
 
@@ -110,9 +114,7 @@ class STATE_Balancing(STATE_Base):
 
     def tick(self, bot: BalancerBot, dt: float):
         # adjust pitch controller target to maintain zero travel
-        pitch_offset = bot.config['pid0']['target']
-        pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.travel, dt)
-
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel, dt)
         # keep heading
         signal_yaw = heading_control.calcPID(bot.heading, dt)
 
@@ -122,19 +124,14 @@ class STATE_Balancing(STATE_Base):
         """ Do the actual balancing control with common termination conditions """
 
         # keep balance by PID control from pitch angle and pitch derivative
-        signal_pitch = pitch_control.calcPID(bot.pitch_angle.get(), dt, -bot.pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
+        signal_pitch = pitch_control.calcPID(bot.pitch_angle.get(), dt, 
+                                             -bot.pitch_deriv.get() if bot.config['use_gyro_as_D'] else None)
 
         # apply input to motors
         StateMachine.motor_signal = limit(StateMachine.motor_signal + signal_pitch, 1.0)
         left_motor_signal =  limit(StateMachine.motor_signal - signal_yaw, 1.0)
         right_motor_signal = limit(StateMachine.motor_signal + signal_yaw, 1.0)
         bot.motor_input(left_motor_signal, right_motor_signal)
-
-        # stop movement when detecting object
-        if len(bot.last_depth_measurement) and bot.last_depth_measurement[5]:
-            # check center pixel of the depth image
-            if bot.last_depth_measurement[5] < 10 * bot.config['stop_distance_cm']:
-                return STATE_Rest()
 
         # stop movement when tilted too much
         if abs(bot.g_angle) > bot.config['pitch_limit']:
@@ -162,11 +159,17 @@ class STATE_Driving(STATE_Balancing):
         heading_control.target_value = bot.heading
 
     def tick(self, bot: BalancerBot, dt: float):
+        # stop movement when detecting obstacle in front
+        if len(bot.last_depth_measurement) and bot.last_depth_measurement[5]:
+            # check center pixel of the depth image
+            if bot.last_depth_measurement[5] < 10 * bot.config['stop_distance_cm']:
+                return STATE_Rest()
+
         # adjust pitch target to maintain constant movement speed
-        pitch_offset = bot.config['pid0']['target']
-        pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.speed.get(), dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.speed.get(), dt)
         # keep heading
         signal_yaw = heading_control.calcPID(bot.heading, dt)
+        
         return super().balance(bot, dt, signal_yaw)
 
     def exit(self, bot: BalancerBot):
@@ -185,8 +188,7 @@ class STATE_Turning(STATE_Balancing):
 
     def tick(self, bot: BalancerBot, dt: float):
         # adjust pitch controller target to maintain zero travel
-        pitch_offset = bot.config['pid0']['target']
-        pitch_control.target_value = pitch_offset - travel_control.calcPID(bot.travel, dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel, dt)
 
         return super().balance(bot, dt, self.turning_speed)
 
@@ -199,6 +201,7 @@ class STATE_FollowPath(STATE_Base):
         Commands:
             m<distance> Drive the specified distance
             t<angle>    Turn the specified amount of degrees
+            w<time>     Wait the given amount of seconds in balancing mode
     """
 
     def __init__(self, path = ['m2', 't180', 'm2', 't180']):
@@ -208,6 +211,7 @@ class STATE_FollowPath(STATE_Base):
     def enter(self, bot: BalancerBot):
         self.substate = STATE_Balancing()
         self.substate.enter(bot)
+        self.remaining_wait = 0.0
 
     def tick(self, bot: BalancerBot, dt: float):
         if self.substate.tick(bot, dt):
@@ -228,6 +232,10 @@ class STATE_FollowPath(STATE_Base):
                 self.substate = STATE_Balancing()
                 self.substate.enter(bot)
 
+        # waiting
+        elif self.remaining_wait > 0.0:
+            self.remaining_wait = max(self.remaining_wait - dt, 0.0)
+
         # read next drive command
         elif len(self.remaining_path):
             self.substate.exit(bot)
@@ -237,6 +245,9 @@ class STATE_FollowPath(STATE_Base):
                 self.substate = STATE_Driving(speed = 0.5 * sign(self.amount))
             elif cmd[0] == 't':
                 self.substate = STATE_Turning(turning_speed = 0.1 * sign(self.amount))
+            elif cmd[0] == 'w':
+                self.remaining_wait = self.amount
+                self.substate = STATE_Balancing()
             else:
                 self.substate = STATE_Balancing()
             self.substate.enter(bot)

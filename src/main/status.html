@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <html>
+<!--
+    The status display that bot sends as response to GET / requests over WLAN.
+    String interpolation is used to fill sections marked with percent sign.
+-->
 
 <head>
     <title>Pico Status</title>
@@ -16,11 +20,11 @@
 <body>
     <h2>Pico Status</h2>
     <div>
-        <p>Battery: %.2f V | Local time: %s</p>
+        <p>Battery: %.2f V | MCU time: %s</p>
         <button id="quitbtn">Shutdown Pico</button>
         <button id="bootbtn">Boot Pico</button>
         <button id="testbtn">Test Connection</button>
-        <label id="response-status" style="color: aquamarine"></label>
+        <label id="response-status" style="color: red"></label>
         <label id="response-text" style="color: gray"></label>
     </div>
     <h2>Directory Tree</h2>
@@ -35,6 +39,7 @@
                     method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: cmd,
                 });
                 // display response
+                document.getElementById('response-status').style.color = (response.status === 200) ? "lightgreen" : "red";
                 document.getElementById('response-status').textContent = response.status + ' ' + response.statusText;
                 document.getElementById('response-text').textContent = await response.text();
                 // clear response display after 2 s

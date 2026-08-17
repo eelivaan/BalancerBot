@@ -105,9 +105,10 @@ class RemoteControlUI(tk.Tk):
     def key_up(self, event):
         if event.keysym in self.pressed_keys:
             self.pressed_keys.remove(event.keysym)
+        # start path following mode
         if event.keysym == 'space':
-            # start path following mode
-            ble_thread.send(json.dumps({'type': 'rc_path'}))
+            ble_thread.send(json.dumps({'type': 'rc_path', 'path': ['m2', 'w2', 't180', 'm2', 't180']}))
+        # stop prior movement
         elif not self.pressed_keys:
             self.stop()
 
