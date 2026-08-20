@@ -20,3 +20,23 @@ The project also features desktop user interfaces for tuning the PID parameters 
 ```bash
 pip install bleak numpy matplotlib opencv-python pillow
 ```
+
+## Native modules
+
+1. After modifications, run ```src/copy-native-modules.bat``` (Alt-V shortcut in VS Code) to copy the native modules source code next to micropython repository under WSL.
+2. Build micropython with the custom modules freezed:
+
+    ```bash
+    cd micropython
+    # When building the first time
+    make -C ports/rp2 BOARD=RPI_PICO2_W submodules
+    make -C mpy-cross
+    # Each time the module source is changed
+    cd ports/rp2
+    make BOARD=RPI_PICO2_W clean
+    make BOARD=RPI_PICO2_W USER_C_MODULES=../../../modules/micropython.cmake # MICROPY_C_HEAP_SIZE=4096
+    make BOARD=RPI_PICO2_W copy
+    ```
+3. Now the ```micropython.uf2``` binary is found under ```BalancerBot/bin/``` ready for deployment into Pico
+
+(https://docs.micropython.org/en/latest/develop/cmodules.html)
