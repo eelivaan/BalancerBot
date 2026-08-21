@@ -10,6 +10,8 @@ bot = BalancerBot(on_config_load)
 
 bot.startBlink()
 
+bot.beep()
+
 def ble_msg_callback(msg):
     """ Receive and handle BLE messages """
     global pitch_angle, log_pending
@@ -133,6 +135,8 @@ print("Terminated")
 sleep(2.0)
 
 bot.off()
+
+bot.beep()
 
 
 # -- start filesystem control over WLAN --

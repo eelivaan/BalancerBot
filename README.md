@@ -23,7 +23,7 @@ pip install bleak numpy matplotlib opencv-python pillow
 
 ## Native modules
 
-1. After modifications, run ```src/copy-native-modules.bat``` (Alt-V shortcut in VS Code) to copy the native modules source code next to micropython repository under WSL.
+1. After modifications, run ```src/copy-native-modules.bat``` (Alt-V shortcut in VS Code) to copy the c/c++ source code next to micropython repository in WSL.
 2. Build micropython with the custom modules freezed:
 
     ```bash

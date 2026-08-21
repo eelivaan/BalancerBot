@@ -38,11 +38,13 @@
   "right_motor_pin": "GP13",
   "IMU_sda_pin": "GP20",
   "IMU_scl_pin": "GP21",
-  "button_pin": "GP22",
+  "button_pin": "GP18",
   "ToF_sda_pin": "GP6",
   "ToF_scl_pin": "GP7",
   "ToF_lpn_pin": 8,
   "ToF_resolution": "4x4",
   "ToF_frequency": 5,
-  "stop_distance_cm": 30
+  "stop_distance_cm": 30,
+  "speaker_pin": 22,
+  "speaker_volume": 0.5
 }

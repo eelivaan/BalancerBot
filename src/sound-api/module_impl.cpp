@@ -13,7 +13,7 @@ extern "C"
     {
         mp_obj_Speaker_t *self = (mp_obj_Speaker_t *)MP_OBJ_TO_PTR(self_in);
         (void)self;
-        mp_printf(print, "Speaker object with volume=%f)", SoundGenerator.volume);
+        mp_printf(print, "Speaker object with volume=%.2f", SoundGenerator.volume);
     }
 
     mp_obj_t Speaker_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args)

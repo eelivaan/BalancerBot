@@ -5,6 +5,7 @@ from machine import Pin, ADC, PWM, I2C, Timer
 from icm20948 import QwiicIcm20948
 from VL53L7CX import VL53L7CX
 from BLESerial import BLESerial
+from sound import Speaker
 import json, math, time
 
 def sign(x):
@@ -87,6 +88,10 @@ class BalancerBot:
         self.button = Pin(self.config['button_pin'], Pin.IN, Pin.PULL_UP)
         self.button_pressed_flag = False
 
+        # speaker
+        self.speaker = Speaker(self.config['speaker_pin'])
+        self.speaker.volume(self.config['speaker_volume'])
+
         # BLE off by default
         self.ble = None
 
@@ -151,6 +156,12 @@ class BalancerBot:
 
     def startBLE(self, ble_msg_callback):
         self.ble = BLESerial(ble_msg_callback)
+
+
+    def beep(self, blocking=False):
+        self.speaker.beep(440.0, 0.2)
+        if blocking:
+            time.sleep_ms(200)
     
     
     def read_battery_voltage(self):
