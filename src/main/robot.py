@@ -11,6 +11,14 @@ import json, math, time
 def sign(x):
     return 0 if x == 0 else (1 if x > 0 else -1)
 
+def wrap_angle(x):
+    """ Keep angle between -180 and +180 assuming it's never outside 360 range """
+    if x > 180:
+        return -360.0 + x
+    elif x < -180:
+        return 360.0 + x
+    return x
+
 class SlidingAverage:
     """ Simple sliding average implementation """
     
@@ -228,10 +236,11 @@ class BalancerBot:
 
     def update(self, dt: float):
         if self.IMU and self.IMU.dataReady():
-            self.IMU.getAgmt() # read all axis and temp from sensor, note this also updates all instance variables
+            # read all axis and temp from sensor, note this also updates all instance variables
+            self.IMU.getAgmt()
             # track heading
             heading_delta = self.IMU.get_gyro()[self.config['vert_axis']] * dt
-            self.heading = math.fmod(self.heading + heading_delta, 360.0)
+            self.heading = wrap_angle(self.heading + heading_delta)
             self.headingsum += heading_delta
             # track time
             self.IMU_last_update_time = time.ticks_diff(time.ticks_ms(), self.IMU_start_time) / 1000.0
@@ -310,6 +319,7 @@ class BalancerBot:
         else:
             return False
 
+    # --------------------------------------------- for plotting purposes ---------------------------------------------
     def measure_accel_with_time(self):
         v = self.IMU.get_accel() # type: ignore
         v['t'] = self.IMU_last_update_time

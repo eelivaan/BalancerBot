@@ -1,10 +1,8 @@
 from utime import sleep, sleep_us, ticks_ms, ticks_us, ticks_diff
+sleep(1.5) # let power stabilize before starting the actual work
 from robot import BalancerBot
 from statemachine import *
 import json
-
-# let power stabilize before starting the actual work
-sleep(1.5)
 
 bot = BalancerBot(on_config_load)
 
@@ -14,7 +12,7 @@ bot.beep()
 
 def ble_msg_callback(msg):
     """ Receive and handle BLE messages """
-    global pitch_angle, log_pending
+    global log_pending
     print("Received BLE message")
     try:
         params = json.loads(msg)
@@ -43,7 +41,6 @@ def ble_msg_callback(msg):
     # calibrate IMU
         elif t == 'calibrate':
             bot.IMU.calibrate()
-            pitch_angle = None
     # start logging
         elif t == 'log':
             bot.start_logging(['time', 'pitch', 'gyro', 'motor_position'], duration=5)
@@ -130,13 +127,12 @@ while not bot.quit_flag:
 
 
 bot.motor_input(0,0) # stop motors
+bot.beep()
 print("Terminated")
 
 sleep(2.0)
 
 bot.off()
-
-bot.beep()
 
 
 # -- start filesystem control over WLAN --
