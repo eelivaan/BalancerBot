@@ -3,7 +3,7 @@
 A two-wheeled robot that uses PID-controller with accelerometer and gyroscope data to stay in balance. 
 The project also features desktop user interfaces for tuning the PID parameters wirelessly and for remote control.
 
-<video width="400" src="https://github.com/user-attachments/assets/d2c598fd-b4f8-46e6-aca9-dc9cf0eea812"></video>
+<video src="https://github.com/user-attachments/assets/4853bf55-4256-4b5c-aa26-172c8961ecdb"></video>
 
 ## Program flow
 
