@@ -1,5 +1,5 @@
 from utime import sleep, sleep_us, ticks_ms, ticks_us, ticks_diff
-sleep(1.5) # let power stabilize before starting the actual work
+sleep(1.0) # let power stabilize before starting the actual work
 from robot import BalancerBot
 from statemachine import *
 import json

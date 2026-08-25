@@ -3,6 +3,7 @@ Control algorithms
 """
 
 def limit(value, max_offset, center=0.0):
+    """ Limit the value between +-max_offset from the center """
     return min(max(value, center-max_offset), center+max_offset)
 
 

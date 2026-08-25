@@ -166,10 +166,13 @@ class BalancerBot:
         self.ble = BLESerial(ble_msg_callback)
 
 
-    def beep(self, blocking=False):
-        self.speaker.beep(440.0, 0.2)
+    def beep(self, pattern=[440.0], blocking=False):
+        """ Make a series of 0.15 second beeps asynchronously """
+        self.speaker.beep(pattern[0], 0.15)
+        for i in range(1, len(pattern)):
+            Timer(-1, mode=Timer.ONE_SHOT, period=200*i, callback=lambda t: self.speaker.beep(pattern[i], 0.15))
         if blocking:
-            time.sleep_ms(200)
+            time.sleep_ms(len(pattern) * 200)
     
     
     def read_battery_voltage(self):

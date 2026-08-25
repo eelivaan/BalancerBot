@@ -1,6 +1,6 @@
-""" State machine for the robot. 
+""" State machine to control the robot's behavior. 
     Each state is a special class that has callbacks for state transitions and
-    has a tick function which returns the new state when needed.
+    has a tick function which returns the new state when transition is needed.
 """
 from robot import BalancerBot, sign
 from control import PIDController, limit
@@ -14,7 +14,7 @@ travel_control = PIDController()
 heading_control = PIDController()
 
 def on_config_load(config):
-    """ Callback to configure PID controllers from config file """
+    """ Callback to configure the PID controllers from config file """
     pitch_control.configure(config['pid0'])
     travel_control.configure(config['pid1'])
     heading_control.configure(config['pid2'])
@@ -76,7 +76,7 @@ class STATE_Rest(STATE_Base):
                 return STATE_Balancing()
 
     def exit(self, bot: BalancerBot):
-        # reset error integrals that may have accumulated while resting (although that shouldn't happen)
+        # reset error integrals that may have accumulated while resting (although they shouldn't)
         pitch_control.err_integral, travel_control.err_integral, heading_control.err_integral = 0.0, 0.0, 0.0
         StateMachine.motor_signal = 0.0
 
@@ -92,7 +92,7 @@ class STATE_Raiseup(STATE_Base):
 
     def tick(self, bot: BalancerBot, dt: float):
         if StateMachine.state_time > 0.5:
-            # full speed backwards
+            # full speed backwards after 0.5 s
             bot.motor_input(-self.direction, -self.direction)
         if abs(bot.pitch_angle.get()) < 5.0 or StateMachine.state_time > 1.0:
             # enter balancing mode when swung up
@@ -111,8 +111,17 @@ class STATE_Balancing(STATE_Base):
         travel_control.target_value = 0.0
         heading_control.target_value = bot.heading
         bot.travel = 0.0
+        self.last_dist_sum = None
 
     def tick(self, bot: BalancerBot, dt: float):
+        # wait for hand gesture
+        dist_sum = sum([0.0 if d == None else d for d in bot.last_depth_measurement[0:8]])
+        if self.last_dist_sum:
+            #change = (self.last_dist_sum - dist_sum) / self.last_dist_sum
+            if dist_sum < 2000:
+                return STATE_FollowHuman()
+        self.last_dist_sum = dist_sum
+
         # adjust pitch controller target to maintain zero travel
         pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel, dt)
         # keep heading
@@ -152,19 +161,21 @@ class STATE_Driving(STATE_Balancing):
 
     def __init__(self, speed):
         self.speed = speed
+        self.depth_stop_enable = True
 
     def enter(self, bot: BalancerBot):
         self.signal_saturation_time = 0.0
-        travel_control.target_value = self.speed
         heading_control.target_value = bot.heading
 
     def tick(self, bot: BalancerBot, dt: float):
-        # stop movement when detecting obstacle in front
-        if len(bot.last_depth_measurement) and bot.last_depth_measurement[5]:
-            # check center pixel of the depth image
-            if bot.last_depth_measurement[5] < 10 * bot.config['stop_distance_cm']:
-                return STATE_Rest()
+        if self.depth_stop_enable:
+            # stop movement when detecting obstacle in front
+            if len(bot.last_depth_measurement) and bot.last_depth_measurement[5]:
+                # check center pixel of the depth image
+                if bot.last_depth_measurement[5] < 10 * bot.config['stop_distance_cm']:
+                    return STATE_Rest()
 
+        travel_control.target_value = self.speed
         # adjust pitch target to maintain constant movement speed
         pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.speed.get(), dt)
         # keep heading
@@ -199,7 +210,7 @@ class STATE_Turning(STATE_Balancing):
 class STATE_FollowPath(STATE_Base):
     """ The robot drives the given sequence of straights and turns
         Commands:
-            m<distance> Drive the specified distance
+            m<distance> Drive the specified distance (motor units)
             t<angle>    Turn the specified amount of degrees
             w<time>     Wait the given amount of seconds in balancing mode
     """
@@ -212,9 +223,10 @@ class STATE_FollowPath(STATE_Base):
         self.substate = STATE_Balancing()
         self.substate.enter(bot)
         self.remaining_wait = 0.0
+        bot.beep([500, 500])
 
     def tick(self, bot: BalancerBot, dt: float):
-        if self.substate.tick(bot, dt):
+        if self.substate.tick(bot, dt) != None:
             # forward termination
             return STATE_Rest()
 
@@ -257,3 +269,33 @@ class STATE_FollowPath(STATE_Base):
 
     def exit(self, bot: BalancerBot):
         self.substate.exit(bot)
+#end STATE_FollowPath
+
+
+class STATE_FollowHuman(STATE_Driving):
+    """ The robot tries to follow the hand that is kept in its sight """
+
+    def __init__(self):
+        super().__init__(0.5)
+        self.depth_stop_enable = False
+
+    def enter(self, bot: BalancerBot):
+        bot.beep([400, 600])
+        super().enter(bot)
+
+    def tick(self, bot: BalancerBot, dt: float):
+        # filter the two topmost rows
+        pixels_of_interest = bot.last_depth_measurement[0:8]
+        dist_sum = sum([0.0 if d == None else d for d in pixels_of_interest])
+        # check that we have a detection of hand in any of the pixels
+        if any([d != None and d < 400 for d in pixels_of_interest]):
+            self.speed = limit((dist_sum - 1600) * 0.01, 0.5)
+        else:
+            if self.speed != 0.0:
+                bot.beep([800])
+            self.speed = 0.0
+        return super().tick(bot, dt)
+
+    def exit(self, bot: BalancerBot):
+        bot.beep([600, 400])
+        super().exit(bot)
