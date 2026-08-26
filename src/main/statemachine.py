@@ -115,10 +115,10 @@ class STATE_Balancing(STATE_Base):
 
     def tick(self, bot: BalancerBot, dt: float):
         # wait for hand gesture
-        dist_sum = sum([0.0 if d == None else d for d in bot.last_depth_measurement[0:8]])
-        if self.last_dist_sum:
+        dist_sum = sum([1000 if d == None else d for d in bot.last_depth_measurement[0:8]])
+        if StateMachine.state_time > 5.0 and self.last_dist_sum:
             #change = (self.last_dist_sum - dist_sum) / self.last_dist_sum
-            if dist_sum < 2500:
+            if dist_sum < 3500:
                 return STATE_FollowHuman()
         self.last_dist_sum = dist_sum
 
@@ -285,12 +285,20 @@ class STATE_FollowHuman(STATE_Driving):
 
     def tick(self, bot: BalancerBot, dt: float):
         # filter the two topmost rows of depth image
-        pixels_of_interest = bot.last_depth_measurement[0:8]
-        closest_detection = min([1500 if d == None else d for d in pixels_of_interest])
+        pixels_of_interest = [1500 if d == None else d for d in bot.last_depth_measurement[0:8]]
+        closest_detection = min(pixels_of_interest)
         # check that we have a detection of the hand in any of the pixels
         if closest_detection < 400:
             # keep 20 cm distance to the target
             self.speed = limit((closest_detection - 200) * 0.01, 0.5)
+            # adjust heading so that we are perpendicular to the target
+            left_sum, right_sum = 0.0, 0.0
+            for (l,r) in zip(pixels_of_interest[0:2] + pixels_of_interest[4:6], 
+                             pixels_of_interest[2:4] + pixels_of_interest[6:8]):
+                if l != None and r != None:
+                    left_sum += l
+                    right_sum += r
+            heading_control.target_value += 15.0 * dt * sign(right_sum - left_sum)
         else:
             # beep a notification
             if self.speed != 0.0:
