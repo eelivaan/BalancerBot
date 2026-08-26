@@ -30,7 +30,7 @@ if not exist "%SRC_VL53%" (
 
 echo  Copying native modules to %DST_WSL%...
 
-wsl bash -lc "mkdir -p \"%DST_WSL%\" && rsync -a --delete \"%ROOT_WSL%/sound-api\"/ \"%DST_WSL%/sound\"/ && rsync -a --delete --exclude freeze --exclude cmake --exclude make \"%ROOT_WSL%/VL53L7CX-api\"/ \"%DST_WSL%/VL53L7CX\"/"
+wsl bash -lc "mkdir -p \"%DST_WSL%\" && rsync -a --delete \"%ROOT_WSL%/sound-api\"/ \"%DST_WSL%/sound\"/ && rsync -a --delete \"%ROOT_WSL%/VL53L7CX-api\"/ \"%DST_WSL%/VL53L7CX\"/"
 
 if errorlevel 1 (
     echo  Copy failed.
