@@ -110,7 +110,7 @@ class STATE_Balancing(STATE_Base):
         self.signal_saturation_time = 0.0
         travel_control.target_value = 0.0
         heading_control.target_value = bot.heading
-        bot.travel = 0.0
+        bot.travel.set(0.0)
         self.last_dist_sum = None
 
     def tick(self, bot: BalancerBot, dt: float):
@@ -118,12 +118,12 @@ class STATE_Balancing(STATE_Base):
         dist_sum = sum([0.0 if d == None else d for d in bot.last_depth_measurement[0:8]])
         if self.last_dist_sum:
             #change = (self.last_dist_sum - dist_sum) / self.last_dist_sum
-            if dist_sum < 2000:
+            if dist_sum < 2500:
                 return STATE_FollowHuman()
         self.last_dist_sum = dist_sum
 
         # adjust pitch controller target to maintain zero travel
-        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel, dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel.get(), dt)
         # keep heading
         signal_yaw = heading_control.calcPID(bot.heading, dt)
 
@@ -199,7 +199,7 @@ class STATE_Turning(STATE_Balancing):
 
     def tick(self, bot: BalancerBot, dt: float):
         # adjust pitch controller target to maintain zero travel
-        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel, dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel.get(), dt)
 
         return super().balance(bot, dt, self.turning_speed)
 
@@ -232,7 +232,7 @@ class STATE_FollowPath(STATE_Base):
 
         # driving
         if isinstance(self.substate, STATE_Driving):
-            if abs(bot.travel) > abs(self.amount):
+            if abs(bot.travel.get()) > abs(self.amount):
                 self.substate.exit(bot)
                 self.substate = STATE_Balancing()
                 self.substate.enter(bot)
@@ -263,7 +263,7 @@ class STATE_FollowPath(STATE_Base):
             else:
                 self.substate = STATE_Balancing()
             self.substate.enter(bot)
-            bot.travel = 0.0
+            bot.travel.set(0.0)
             bot.headingsum = 0.0
     #end tick
 
@@ -284,13 +284,15 @@ class STATE_FollowHuman(STATE_Driving):
         super().enter(bot)
 
     def tick(self, bot: BalancerBot, dt: float):
-        # filter the two topmost rows
+        # filter the two topmost rows of depth image
         pixels_of_interest = bot.last_depth_measurement[0:8]
-        dist_sum = sum([0.0 if d == None else d for d in pixels_of_interest])
-        # check that we have a detection of hand in any of the pixels
-        if any([d != None and d < 400 for d in pixels_of_interest]):
-            self.speed = limit((dist_sum - 1600) * 0.01, 0.5)
+        closest_detection = min([1500 if d == None else d for d in pixels_of_interest])
+        # check that we have a detection of the hand in any of the pixels
+        if closest_detection < 400:
+            # keep 20 cm distance to the target
+            self.speed = limit((closest_detection - 200) * 0.01, 0.5)
         else:
+            # beep a notification
             if self.speed != 0.0:
                 bot.beep([800])
             self.speed = 0.0

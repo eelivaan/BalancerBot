@@ -98,7 +98,7 @@ while not bot.quit_flag:
 
         # log if needed
         if bot.logging():
-            bot.log([bot.time_ms() / 1000.0, bot.pitch_angle.get(), bot.pitch_deriv.get(), bot.travel])
+            bot.log([bot.time_ms() / 1000.0, bot.pitch_angle.get(), bot.pitch_deriv.get(), bot.travel.get()])
         elif log_pending:
             log_pending = False
             bot.ble.send('log_output') # type: ignore

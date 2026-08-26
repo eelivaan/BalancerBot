@@ -2,8 +2,15 @@
 
 A two-wheeled robot that uses PID-controller with accelerometer and gyroscope data to stay in balance. 
 The project also features desktop user interfaces for tuning the PID parameters wirelessly and for remote control.
+The source code is Micropython extended with some custom c++ modules that are frozen into the binary.
 
 <video src="https://github.com/user-attachments/assets/4853bf55-4256-4b5c-aa26-172c8961ecdb"></video>
+
+## Control options
+
+- Remote control from desktop
+- Follow a predefined path
+- Follow hand that is kept in its field of view
 
 ## Program flow
 
