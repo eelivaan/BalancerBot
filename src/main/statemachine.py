@@ -110,7 +110,7 @@ class STATE_Balancing(STATE_Base):
         self.signal_saturation_time = 0.0
         travel_control.target_value = 0.0
         heading_control.target_value = bot.heading
-        bot.travel.set(0.0)
+        bot.travel = 0.0
         self.last_dist_sum = None
 
     def tick(self, bot: BalancerBot, dt: float):
@@ -123,7 +123,7 @@ class STATE_Balancing(STATE_Base):
         self.last_dist_sum = dist_sum
 
         # adjust pitch controller target to maintain zero travel
-        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel.get(), dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.filtered_travel.get(), dt)
         # keep heading
         signal_yaw = heading_control.calcPID(bot.heading, dt)
 
@@ -199,7 +199,7 @@ class STATE_Turning(STATE_Balancing):
 
     def tick(self, bot: BalancerBot, dt: float):
         # adjust pitch controller target to maintain zero travel
-        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.travel.get(), dt)
+        pitch_control.target_value = bot.config['pid0']['target'] - travel_control.calcPID(bot.filtered_travel.get(), dt)
 
         return super().balance(bot, dt, self.turning_speed)
 
@@ -232,7 +232,7 @@ class STATE_FollowPath(STATE_Base):
 
         # driving
         if isinstance(self.substate, STATE_Driving):
-            if abs(bot.travel.get()) > abs(self.amount):
+            if abs(bot.filtered_travel.get()) > abs(self.amount):
                 self.substate.exit(bot)
                 self.substate = STATE_Balancing()
                 self.substate.enter(bot)
@@ -263,7 +263,7 @@ class STATE_FollowPath(STATE_Base):
             else:
                 self.substate = STATE_Balancing()
             self.substate.enter(bot)
-            bot.travel.set(0.0)
+            bot.travel = 0.0
             bot.headingsum = 0.0
     #end tick
 

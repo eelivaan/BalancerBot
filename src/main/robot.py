@@ -107,10 +107,11 @@ class BalancerBot:
         self.headingsum = 0.0   # total change of heading in degrees
         self.angularv = 0.0     # angular velocity around pitch axis
         self.motor_speed = 0.0  # instantaneous motor speed [-1 1]
+        self.travel = 0.0       # horizontal travel in motor units
         self.speed = SlidingAverage(self.config['speed_filter'])        # filtered speed value
         self.pitch_angle = SlidingAverage(self.config['pitch_filter'])  # filtered pitch angle
         self.pitch_deriv = SlidingAverage(self.config['gyro_filter'])   # filtered pitch derivative (filtered angularv)
-        self.travel = SlidingAverage(self.config['travel_filter'])      # horizontal travel in motor units
+        self.filtered_travel = SlidingAverage(self.config['travel_filter']) # filtered motor travel
         self.motors_enabled = True
         self.quit_flag = False
         self.logfile = None
@@ -264,7 +265,8 @@ class BalancerBot:
                 self.last_depth_measurement = depthimg
 
         # keep track of travel distance
-        self.travel.add(self.motor_speed * dt)  # estimate integral of motor rotation
+        self.travel += self.motor_speed * dt  # estimate integral of motor rotation
+        self.filtered_travel.add(self.travel)
     #end update
 
 

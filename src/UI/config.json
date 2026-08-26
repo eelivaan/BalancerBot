@@ -29,7 +29,7 @@
   "pitch_filter": 3,
   "gyro_filter": 3,
   "speed_filter": 55,
-  "travel_filter": 5,
+  "travel_filter": 3,
   "pitch_limit": 60.0,
   "use_gyro_as_D": true,
   "loop_frequency": 50,
