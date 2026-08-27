@@ -2,7 +2,7 @@
     Each state is a special class that has callbacks for state transitions and
     has a tick function which returns the new state when transition is needed.
 """
-from robot import BalancerBot, sign
+from robot import BalancerBot, sign, wrap_angle
 from control import PIDController, limit
 
 
@@ -284,21 +284,21 @@ class STATE_FollowHuman(STATE_Driving):
         super().enter(bot)
 
     def tick(self, bot: BalancerBot, dt: float):
-        # filter the two topmost rows of depth image
-        pixels_of_interest = [1500 if d == None else d for d in bot.last_depth_measurement[0:8]]
+        # filter the two topmost rows of depth image and discard detections further than 55 cm
+        pixels_of_interest = [1500 if d == None or d > 550 else d for d in bot.last_depth_measurement[0:8]]
         closest_detection = min(pixels_of_interest)
-        # check that we have a detection of the hand in any of the pixels
+        # check that we have a detection of the target in any of the pixels
         if closest_detection < 400:
-            # keep 20 cm distance to the target
-            self.speed = limit((closest_detection - 200) * 0.01, 0.5)
+            # keep 15 cm distance to the target
+            self.speed = limit((closest_detection - 150) * 0.01, 0.5)
             # adjust heading so that we are perpendicular to the target
             left_sum, right_sum = 0.0, 0.0
-            for (l,r) in zip(pixels_of_interest[0:2] + pixels_of_interest[4:6], 
-                             pixels_of_interest[2:4] + pixels_of_interest[6:8]):
-                if l != None and r != None:
-                    left_sum += l
-                    right_sum += r
-            heading_control.target_value += 15.0 * dt * sign(right_sum - left_sum)
+            for (left, right) in zip(pixels_of_interest[0:2] + pixels_of_interest[4:6], 
+                                     pixels_of_interest[2:4] + pixels_of_interest[6:8]):
+                left_sum += left
+                right_sum += right
+            delta_heading = 15.0 * dt * sign(right_sum - left_sum)
+            heading_control.target_value = wrap_angle(heading_control.target_value + delta_heading)
         else:
             # beep a notification
             if self.speed != 0.0:

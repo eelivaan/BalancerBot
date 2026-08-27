@@ -8,9 +8,9 @@ The source code is Micropython extended with some custom c++ modules that are fr
 
 ## Control options
 
-- Remote control from desktop
+- BLE remote control from desktop
 - Follow a predefined path
-- Follow hand that is kept in its field of view
+- Follow hand or other target that is kept in its field of view
 
 ## Program flow
 
